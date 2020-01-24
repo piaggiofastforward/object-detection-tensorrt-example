@@ -20,7 +20,9 @@ $ sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
 $ sudo systemctl restart docker
 
 # next is to load the saved docker container from gita9000 into your local docker repo : 
+
 scp <first.lastname>@10.0.0.166:/opt/annotation_template/annotation_template.tar <destination>
+    
 sudo docker load <destination>/annotation_template.tar
 
 # WORK IN PROGRESS!!
