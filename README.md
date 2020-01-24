@@ -6,17 +6,22 @@ Clone this repository onto your local machine, and checkout VS-1361-annotation b
 ## Requirements
 
 Minimum version of Ubuntu is 18.04
+
 Minimum version for the Nvidia Drivers on the system is 418.67 ( 430.50 also works ).
+
 Minimum version for Docker that needs to be installed is 19.03.2
 
 https://docs.docker.com/v17.12/install/linux/docker-ce/ubuntu/
 
 # Add the package repositories 
 $ distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+
 $ curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
+
 $ curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
 
 $ sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+
 $ sudo systemctl restart docker
 
 # next is to load the saved docker container from gita9000 into your local docker repo : 
