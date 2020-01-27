@@ -4,7 +4,7 @@ programname=$0
 function usage {
     echo "usage: $programname [-d {DATA}]"
     echo "  -d {DATA} runs the docker container"
-    echo "            where DATA is the path to the host's data folder where the ROS bags are located."
+    echo "            where DATA is the path to the host's data folder where the data bags are located."
     echo "  -h        display this help message and exit"
     exit 1
 }
