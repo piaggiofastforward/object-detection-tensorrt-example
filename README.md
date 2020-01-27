@@ -28,7 +28,7 @@ $ sudo systemctl restart docker
 
 scp <first.lastname>@10.0.0.166:/home/cv_data/annotation_template.tar <destination>
     
-sudo docker load <destination>/annotation_template.tar
+sudo docker load -i <destination>/annotation_template.tar
 
 # WORK IN PROGRESS!!
 
