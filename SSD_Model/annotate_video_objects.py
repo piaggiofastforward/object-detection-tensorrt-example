@@ -216,16 +216,16 @@ def main():
     video_filepath = './video_capture'
 
     # Define the video stream
-    # cap = cv2.VideoCapture(0)  # Change only if you have more than one webcams
-    if args.camera == True:
-        # Change only if you have more than one webcams
-        print('Running webcam:')
-        cap = cv2.VideoCapture(0)
-    else:
+    if len(args.video_input) > 0:
         #       cap = cv2.VideoCapture('./2019-08-16_19-48-01_rgb.avi')
         print('Running videofile : ', args.video_input)
         cap = cv2.VideoCapture(args.video_input)
         video_filepath = os.path.splitext(args.video_input)[0]
+    elif args.camera == True:
+        # Change only if you have more than one webcams
+        print('Running webcam:')
+        cap = cv2.VideoCapture(0)
+        # Change only if you have more than one webcams
 
     if args.filemodetxt:
         filemodetxt = True
