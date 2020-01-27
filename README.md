@@ -5,30 +5,38 @@ Clone this repository onto your local machine, and checkout VS-1361-annotation b
 
 ## Requirements
 
-Minimum version of Ubuntu is 18.04
+- Minimum version of Ubuntu is 18.04
 
-Minimum version for the Nvidia Drivers on the system is 418.67 ( 430.50 also works ).
+- Minimum version for the Nvidia Drivers on the system is 418.67 ( 430.50 also works ).
 
-Minimum version for Docker that needs to be installed is 19.03.2
+- Minimum version for Docker that needs to be installed is 19.03.2
 
-https://docs.docker.com/v17.12/install/linux/docker-ce/ubuntu/
+Follow these [ubuntu docker-ce instructions](https://docs.docker.com/v17.12/install/linux/docker-ce/ubuntu/)
 
-# Add the package repositories 
-$ distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
-
-$ curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
-
-$ curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
-
-$ sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
-
-$ sudo systemctl restart docker
-
-# next is to load the saved docker container from gita9000 into your local docker repo : 
-
-scp <first.lastname>@10.0.0.166:/home/cv_data/annotation_template.tar <destination>
+## Add the package repositories 
     
-sudo docker load -i <destination>/annotation_template.tar
+    $ distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+
+    $ curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
+
+    $ curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+
+    $ sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+
+    $ sudo systemctl restart docker
+
+## Load the saved docker container from gita9000 into your local docker repo : 
+
+    $ scp <first.lastname>@10.0.0.166:/home/cv_data/annotation_template.tar <destination>
+    
+    $ sudo docker load -i <destination>/annotation_template.tar
+
+
+## Run the Docker via the helper script
+
+    $ sudo ./run_environment.sh -d PATH_TO_MY_LOCAL_DATA_FOLDER
+
+where the optional argument `-d PATH_TO_MY_LOCAL_DATA_FOLDER` allows mounting the volume of this data path to the container's `/media` folder
 
 # WORK IN PROGRESS!!
 
