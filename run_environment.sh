@@ -1,4 +1,4 @@
-# So that docker can see the webcam
+#!/bin/bash
 
 programname=$0
 function usage {
