@@ -14,6 +14,7 @@ import argparse
 ref_points_list = []  # reference points
 current_gt_in_list = []  # current ground truth entries
 box_colors_list = []
+current_validated_bounding_box = []  # It will contain [x_min, y_min, width, height] of the bounding box 
 
 started_drawing_triangle = False
 started_drawing_triangle_and_moused_moved = False
@@ -54,13 +55,14 @@ def draw_points(img_input, points_uv_coords, num_valid_points=None, color_rgb=No
 
 def shape_selection(event, x, y, flags, param):
     # grab references to the global variables
-    global ref_points_list, current_gt_in_list, started_drawing_triangle, started_drawing_triangle_and_moused_moved, image, clone
+    global ref_points_list, current_gt_in_list, started_drawing_triangle, started_drawing_triangle_and_moused_moved, current_validated_bounding_box, image, clone
 
     # if the left mouse button was clicked, record the starting
     # (x, y) coordinates and indicate that cropping is being performed
     if event == cv2.EVENT_LBUTTONDOWN:
         started_drawing_triangle = True
         started_drawing_triangle_and_moused_moved = False
+        current_validated_bounding_box = []
         ref_points_list = [(x, y)]
         
         # draw the starting point
@@ -84,7 +86,7 @@ def shape_selection(event, x, y, flags, param):
                 valid_boxes_indices.append(entry_idx)
 
         # Regenerate the bounding box list only with valid boxes (those in which the point is contained):
-        current_gt_in_list = [current_gt_in_list[valid_gt_idx] for valid_gt_idx in valid_boxes_indices]      
+        current_gt_in_list = [current_gt_in_list[valid_gt_idx] for valid_gt_idx in valid_boxes_indices]
         
         cv2.imshow("image", image)
             
@@ -106,7 +108,8 @@ def shape_selection(event, x, y, flags, param):
         # the cropping operation is finished
         if started_drawing_triangle_and_moused_moved:
             ref_points_list.append((x, y))
-    
+            current_validated_bounding_box = fill_in_bounding_box_selected(x_min=ref_points_list[0][0], y_min=ref_points_list[0][1], x_max=ref_points_list[1][0], y_max=ref_points_list[1][1])
+
             # draw a rectangle around the region of interest
             cv2.rectangle(image, ref_points_list[0], ref_points_list[1], (0, 255, 0), 2)
             cv2.imshow("image", image)
@@ -241,14 +244,27 @@ def get_images(filename_template, indices_list = [], show_images = False, return
 
     return images  # all even if None
 
+
+def fill_in_bounding_box_selected(x_min, y_min, x_max, y_max):
+    '''
+    @return a list of the bounding box parameters: [x_min, y_min, width, height]
+    '''
+    # TODO: handle inversion drawings of rectangle
+    width = abs(x_max - x_min)
+    height = abs(y_max - y_min)
+    
+    bounding_box_entry = [x_min, x_max, width, height]
+    
+    return bounding_box_entry
+
+    
 def main():
-    global image, clone, current_gt_in_list, box_colors_list
+    global image, clone, current_gt_in_list, box_colors_list, current_validated_bounding_box
 
     import csv
     import sys
     from os import path
     args = parse_commandline_arguments()
-    initial_frame_number = 0  # TODO: infer based on the last valid line of the output gt.csv file if any contents exist already
 
     if not path.isfile(args.labels):
         print("Input bounding boxes (labels) file is missing!")
@@ -256,8 +272,16 @@ def main():
     input_bounding_boxes_file = args.labels
         
     output_folder = make_sure_path_exists(args.output_folder)
-    output_gt_filename = path.join(output_folder, "gt.csv") 
-    
+    output_gt_filename = path.join(output_folder, "gt.csv")
+    output_array_of_bounding_boxes = np.empty((0, 4), dtype='int')
+
+    if path.isfile(output_gt_filename):
+        # File already exist, so read contents and close 
+        output_array_of_bounding_boxes = np.genfromtxt(output_gt_filename, delimiter=',', dtype='int').reshape(-1, 4)
+
+    # Infer based on the last valid line of the output gt.csv file if any contents exist already
+    initial_frame_number = len(output_array_of_bounding_boxes)  
+
     use_video_file = True
     if args.video_input is None:
         if not (args.images_input_path is None):
@@ -304,8 +328,10 @@ def main():
     
     # TODO: Show image with UI instructions (lengend of keyboard commands)
     
+    # FIXME: there is problem with this check whenever the initial_frame_number is not 0!
     while not finished_processing and current_entry_index < working_num_of_frames:    
         current_gt_in_list = []
+        current_validated_bounding_box = []
         # Extract entries for the current frame number
         current_entry_index_matches_frame_number = True
         while current_entry_index_matches_frame_number:
@@ -321,14 +347,16 @@ def main():
         if not (target_frame_number == current_frame_number):
             current_frame_number += 1  # Advance to next frame
             continue
-                    
+
+        # TODO: use just a single color always (See color spaces from OpenCV)
+        # and use the confident level to tune down the color of the box                    
         box_colors_list = [None] * len(current_gt_in_list)
         for bb_idx, bb_color in enumerate(box_colors_list):
             color_rand = (list(np.random.choice(range(256), size=3)))  
             box_colors_list[bb_idx] = [int(color_rand[0]), int(color_rand[1]), int(color_rand[2])]
             
-        print("current_entry_index", current_entry_index)    
-        # keep looping until the 'q' key is pressed
+        # TODO: display previous frame for sanity check of previous selection   
+
         image = images_list[current_frame_number].copy()
         clone = image.copy()
         while True:
@@ -353,6 +381,9 @@ def main():
                 current_frame_number = initial_frame_number - 1  # Restart counting  (-1 b/c it will increment next)
                 break
             
+            # TODO: Add clear box case for removing all when the entire frame is the bounding box
+            # This can happen when the classifier poops (may be)
+            
             # press 'r' to reset the window
             if key == ord("r"):
                 current_entry_index = 0  # Reset seek on input csv file
@@ -360,16 +391,34 @@ def main():
                 current_frame_number = initial_frame_number - 1  # Restart counting  (-1 b/c it will increment next)
                 break
             
+            # press SPACE bar to save and continue
+            if key == ord(" "):
+                # TODO: Save validated bounding box to file
+                if len(current_validated_bounding_box) == 0:
+                    # FIXME: Kind of track the closest and similar in size from previous frame
+                    for valid_entry in current_gt_in_list:
+                        current_validated_bounding_box = fill_in_bounding_box_selected(x_min=int(valid_entry['xmin']), y_min=int(valid_entry['ymin']), x_max=int(valid_entry['xmax']), y_max=int(valid_entry['ymax']))
+
+                if len(current_validated_bounding_box) == 0:
+                    print("Final BB: [nan,nan,nan,nan]")  # TODO: Write nan's to file
+                else:
+                    print("Final BB: " , current_validated_bounding_box)  # TODO: Write values to file
+                    
+                break
+
             # press 'q' to quit
             if key == ord("q"):
                 finished_processing = True
                 break  # First quit the inner loop
-
+            
         # Work on next frame
         current_frame_number += 1
         target_frame_number += 1  
         if target_frame_number < 0:
             target_frame_number = 0
+        
+    # Write results of output_array_of_bounding_boxes to file
+    np.savetxt(output_gt_filename, output_array_of_bounding_boxes, delimiter=',', fmt='%i')
         
     # close all open windows
     cv2.destroyAllWindows() 
