@@ -273,14 +273,6 @@ def main():
         
     output_folder = make_sure_path_exists(args.output_folder)
     output_gt_filename = path.join(output_folder, "gt.csv")
-    output_array_of_bounding_boxes = np.empty((0, 4), dtype='int')
-
-    if path.isfile(output_gt_filename):
-        # File already exist, so read contents and close 
-        output_array_of_bounding_boxes = np.genfromtxt(output_gt_filename, delimiter=',', dtype='int').reshape(-1, 4)
-
-    # Infer based on the last valid line of the output gt.csv file if any contents exist already
-    initial_frame_number = len(output_array_of_bounding_boxes)  
 
     use_video_file = True
     if args.video_input is None:
@@ -316,7 +308,21 @@ def main():
         working_num_of_frames = min([working_num_of_frames, len(images_list)])
         print("Using only %d frames" % (working_num_of_frames))
         sys.exit(1)  # CHECME: exiting shouldn't be necessary
-    
+
+    # Start with an array full of NANs
+    output_array_of_bounding_boxes = np.ndarray((0, 4), dtype='int')
+    if path.isfile(output_gt_filename):
+        # File already exist, so read contents and close 
+        output_array_of_bounding_boxes = np.genfromtxt(output_gt_filename, delimiter=',', dtype='int').reshape(-1, 4)
+        # TODO: inf the the initial frame number as the last non-NANs in the sequence file
+        
+    # Infer based on the last valid line of the output gt.csv file if any contents exist already
+    initial_frame_number = len(output_array_of_bounding_boxes)  
+
+    # Append the remaining of the file with NANs
+    output_array_of_bounding_boxes_remaining = np.ndarray((working_num_of_frames - initial_frame_number, 4), dtype='int') * np.nan
+    output_array_of_bounding_boxes = np.vstack((output_array_of_bounding_boxes, output_array_of_bounding_boxes_remaining))
+
     # TODO: Just reading the first image
     cv2.namedWindow("image")
     cv2.setMouseCallback("image", shape_selection)
@@ -384,13 +390,6 @@ def main():
             # TODO: Add clear box case for removing all when the entire frame is the bounding box
             # This can happen when the classifier poops (may be)
             
-            # press 'r' to reset the window
-            if key == ord("r"):
-                current_entry_index = 0  # Reset seek on input csv file
-                target_frame_number = current_frame_number - 1  # Restart counting (-1 b/c it will increment next)
-                current_frame_number = initial_frame_number - 1  # Restart counting  (-1 b/c it will increment next)
-                break
-            
             # press SPACE bar to save and continue
             if key == ord(" "):
                 # TODO: Save validated bounding box to file
@@ -400,10 +399,17 @@ def main():
                         current_validated_bounding_box = fill_in_bounding_box_selected(x_min=int(valid_entry['xmin']), y_min=int(valid_entry['ymin']), x_max=int(valid_entry['xmax']), y_max=int(valid_entry['ymax']))
 
                 if len(current_validated_bounding_box) == 0:
+                    output_array_of_bounding_boxes[target_frame_number] = [np.nan, np.nan, np.nan, np.nan]
                     print("Final BB: [nan,nan,nan,nan]")  # TODO: Write nan's to file
                 else:
                     print("Final BB: " , current_validated_bounding_box)  # TODO: Write values to file
                     
+                break
+            # press 'r' to reset the window
+            elif key == ord("r"):
+                current_entry_index = 0  # Reset seek on input csv file
+                target_frame_number = current_frame_number - 1  # Restart counting (-1 b/c it will increment next)
+                current_frame_number = initial_frame_number - 1  # Restart counting  (-1 b/c it will increment next)
                 break
 
             # press 'q' to quit
@@ -418,7 +424,7 @@ def main():
             target_frame_number = 0
         
     # Write results of output_array_of_bounding_boxes to file
-    np.savetxt(output_gt_filename, output_array_of_bounding_boxes, delimiter=',', fmt='%i')
+    np.savetxt(output_gt_filename, output_array_of_bounding_boxes, delimiter=',', fmt='%.0f')
         
     # close all open windows
     cv2.destroyAllWindows() 
