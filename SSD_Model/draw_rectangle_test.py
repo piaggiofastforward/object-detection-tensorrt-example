@@ -313,8 +313,11 @@ def main():
     output_array_of_bounding_boxes = np.ndarray((0, 4), dtype='int')
     if path.isfile(output_gt_filename):
         # File already exist, so read contents and close 
-        output_array_of_bounding_boxes = np.genfromtxt(output_gt_filename, delimiter=',', dtype='int').reshape(-1, 4)
-        # TODO: inf the the initial frame number as the last non-NANs in the sequence file
+        output_array_of_bounding_boxes_temp = np.genfromtxt(output_gt_filename, delimiter=',', dtype='float').reshape(-1, 4)
+        # Reduce the array till the last non-NANs in the sequence file
+        non_nan_indices = np.argwhere(np.logical_not(np.any(np.isnan(output_array_of_bounding_boxes_temp), axis=1)))
+        last_non_nan_index = non_nan_indices[-1, 0]
+        output_array_of_bounding_boxes = output_array_of_bounding_boxes_temp[:last_non_nan_index + 1]
         
     # Infer based on the last valid line of the output gt.csv file if any contents exist already
     initial_frame_number = len(output_array_of_bounding_boxes)  
@@ -323,23 +326,28 @@ def main():
     output_array_of_bounding_boxes_remaining = np.ndarray((working_num_of_frames - initial_frame_number, 4), dtype='int') * np.nan
     output_array_of_bounding_boxes = np.vstack((output_array_of_bounding_boxes, output_array_of_bounding_boxes_remaining))
 
-    # TODO: Just reading the first image
     cv2.namedWindow("image")
     cv2.setMouseCallback("image", shape_selection)
     
     current_frame_number = initial_frame_number
     current_entry_index = 0
-    target_frame_number = 0  # Needed for resets and rewinds
+    target_frame_number = initial_frame_number  # Needed for resets and rewinds
     finished_processing = False
     
     # TODO: Show image with UI instructions (lengend of keyboard commands)
     
-    # FIXME: there is problem with this check whenever the initial_frame_number is not 0!
     while not finished_processing and current_entry_index < working_num_of_frames:    
         current_gt_in_list = []
         current_validated_bounding_box = []
+        current_entry_index_matches_frame_number = False
+
+        # Find the first entry index matching the current frame number
+        while not current_entry_index_matches_frame_number:
+            current_entry_index_matches_frame_number = int(rows_in[current_entry_index]['frame_number']) == current_frame_number
+            if not current_entry_index_matches_frame_number:
+                current_entry_index += 1  # Keep searching for the index until a first match is found
+            
         # Extract entries for the current frame number
-        current_entry_index_matches_frame_number = True
         while current_entry_index_matches_frame_number:
             current_entry_index_matches_frame_number = int(rows_in[current_entry_index]['frame_number']) == current_frame_number
             valid_entry = current_entry_index_matches_frame_number and rows_in[current_entry_index]['class_name'] == "person" 
@@ -372,38 +380,32 @@ def main():
                 bb_end_point = (int(gt_entry['xmax']), int(gt_entry['ymax']))
                 cv2.rectangle(image, bb_start_point, bb_end_point, box_colors_list[entry_idx], 3)
             
+            # TODO: Add clear box case for removing all when the entire frame is the bounding box
+            # This can happen when the classifier poops (may be)
+        
             # display the image and wait for a keypress
             cv2.imshow("image", image)
             key = cv2.waitKeyEx(1) & 0xFF
-        
-            # press RIGHT arrow key or '.' to move forward to the next frame
-            if key == 83 or key == ord("."):         
-                break
 
-            # press LEFT key or ',' to rewind to the previous frame
-            if key == 81 or key == ord(","): 
-                current_entry_index = 0  # Reset seek on input csv file
-                target_frame_number = current_frame_number - 2  # Restart counting (-1 b/c it will increment next)
-                current_frame_number = initial_frame_number - 1  # Restart counting  (-1 b/c it will increment next)
-                break
-            
-            # TODO: Add clear box case for removing all when the entire frame is the bounding box
-            # This can happen when the classifier poops (may be)
-            
-            # press SPACE bar to save and continue
-            if key == ord(" "):
-                # TODO: Save validated bounding box to file
+            # press SPACE bar or RIGHT arrow key or '.' to move forward to the next frame (also saves to file)
+            if key == ord(" ") or key == 83 or key == ord("."):         
                 if len(current_validated_bounding_box) == 0:
-                    # FIXME: Kind of track the closest and similar in size from previous frame
+                    # TODO: Try to compare to the closest and similar in size from previous frame
                     for valid_entry in current_gt_in_list:
                         current_validated_bounding_box = fill_in_bounding_box_selected(x_min=int(valid_entry['xmin']), y_min=int(valid_entry['ymin']), x_max=int(valid_entry['xmax']), y_max=int(valid_entry['ymax']))
 
+                # TODO: Save validated bounding box to file
                 if len(current_validated_bounding_box) == 0:
                     output_array_of_bounding_boxes[target_frame_number] = [np.nan, np.nan, np.nan, np.nan]
-                    print("Final BB: [nan,nan,nan,nan]")  # TODO: Write nan's to file
                 else:
-                    print("Final BB: " , current_validated_bounding_box)  # TODO: Write values to file
-                    
+                    output_array_of_bounding_boxes[target_frame_number] = current_validated_bounding_box
+                print("Frame %05d saving BB: %s" % (target_frame_number, output_array_of_bounding_boxes[target_frame_number]))  # TODO: Write nan's to file
+                break
+            # press LEFT key or ',' to rewind to the previous frame
+            elif key == 81 or key == ord(","): 
+                current_entry_index = 0  # Reset seek on input csv file
+                target_frame_number = current_frame_number - 2  # Restart counting (-1 b/c it will increment next)
+                current_frame_number = initial_frame_number - 1  # Restart counting  (-1 b/c it will increment next)
                 break
             # press 'r' to reset the window
             elif key == ord("r"):
@@ -411,9 +413,8 @@ def main():
                 target_frame_number = current_frame_number - 1  # Restart counting (-1 b/c it will increment next)
                 current_frame_number = initial_frame_number - 1  # Restart counting  (-1 b/c it will increment next)
                 break
-
             # press 'q' to quit
-            if key == ord("q"):
+            elif key == ord("q"):
                 finished_processing = True
                 break  # First quit the inner loop
             
