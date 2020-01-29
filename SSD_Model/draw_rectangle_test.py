@@ -259,7 +259,41 @@ def fill_in_bounding_box_selected(x_min, y_min, x_max, y_max):
     
     return bounding_box_entry
 
+def get_bgr_colors_list(num_colors = 10, do_random = False):
+    max_num_predifined_colors = 10
+    colors_list_bgr = []
+    if do_random == False:
+        # Predifined set of RGB colors
+        # vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+        predifined_rgb_colors = [None] * max_num_predifined_colors
+        predifined_rgb_colors[0] = (255, 0, 0)  # Red     #FF0000     (255,0,0)
+        predifined_rgb_colors[1] = (0, 0, 255)  # Blue     #0000FF     (0,0,255)
+        predifined_rgb_colors[2] = (255, 255, 0)  # Yellow     #FFFF00     (255,255,0)
+        predifined_rgb_colors[3] = (0, 255, 255)  # Cyan / Aqua     #00FFFF     (0,255,255)
+        predifined_rgb_colors[4] = (255, 0, 255)  # Magenta / Fuchsia     #FF00FF     (255,0,255)
+        predifined_rgb_colors[5] = (255, 165, 0)  # orange     #FFA500     (255,165,0)
+        predifined_rgb_colors[6] = (128, 0, 0)  # Maroon     #800000     (128,0,0)
+        predifined_rgb_colors[7] = (128, 128, 0)  # Olive     #808000     (128,128,0)
+        predifined_rgb_colors[8] = (128, 0, 128)  # Purple     #800080     (128,0,128)
+        predifined_rgb_colors[9] = (0, 128, 128)  # Teal     #008080     (0,128,128)
+        # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        
+        for idx_rgb in range(min(max_num_predifined_colors, num_colors)):
+            # NOTE: we need to convert RGB to BGR
+            colors_list_bgr.append(rgb2bgr_color(predifined_rgb_colors[idx_rgb]))
+            
+        if num_colors > max_num_predifined_colors:
+            # Append remaining colors randomly
+            do_random = True
+        
+    if do_random:    
+        for idx in range(num_colors - len(colors_list_bgr)):
+            color_rand = (list(np.random.choice(range(256), size=3)))  
+            colors_list_bgr.append((int(color_rand[0]), int(color_rand[1]), int(color_rand[2])))
     
+    return colors_list_bgr  
+
+          
 def main():
     global image, clone, current_gt_in_list, box_colors_list, current_validated_bounding_box
 
@@ -328,12 +362,8 @@ def main():
     output_array_of_bounding_boxes_remaining = np.ndarray((working_num_of_frames - initial_frame_number, 4), dtype='int') * np.nan
     output_array_of_bounding_boxes = np.vstack((output_array_of_bounding_boxes, output_array_of_bounding_boxes_remaining))
 
-    # TODO: use just a single color always (See color spaces from OpenCV)
-    # and use the confident level to tune down the color of the box                    
-    box_colors_list = [None] * 20  # FIXME: using a max of 20 random colors at the moment
-    for bb_idx, bb_color in enumerate(box_colors_list):
-        color_rand = (list(np.random.choice(range(256), size=3)))  
-        box_colors_list[bb_idx] = [int(color_rand[0]), int(color_rand[1]), int(color_rand[2])]
+    # WISH: Use the confident level to tune down the color of the box                    
+    box_colors_list = get_bgr_colors_list(num_colors=5, do_random=False)
 
     cv2.namedWindow("image", cv2.WINDOW_NORMAL)
     cv2.setMouseCallback("image", shape_selection)
