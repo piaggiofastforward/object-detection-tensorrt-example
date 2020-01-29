@@ -333,7 +333,7 @@ def main():
 
     import csv
     import sys
-    from os import path
+    from os import path, stat
     args = parse_commandline_arguments()
 
     if not path.isfile(args.labels):
@@ -383,11 +383,14 @@ def main():
     output_array_of_bounding_boxes = np.ndarray((0, 4), dtype='int')
     if path.isfile(output_gt_filename):
         # File already exist, so read contents and close 
-        output_array_of_bounding_boxes_temp = np.genfromtxt(output_gt_filename, delimiter=',', dtype='float').reshape(-1, 4)
-        # Reduce the array till the last non-NANs in the sequence file
-        non_nan_indices = np.argwhere(np.logical_not(np.any(np.isnan(output_array_of_bounding_boxes_temp), axis=1)))
-        last_non_nan_index = non_nan_indices[-1, 0]
-        output_array_of_bounding_boxes = output_array_of_bounding_boxes_temp[:last_non_nan_index + 1]
+        # Check if file is empty
+        if not stat(output_gt_filename).st_size == 0:
+            output_array_of_bounding_boxes_temp = np.genfromtxt(output_gt_filename, delimiter=',', dtype='float').reshape(-1, 4)
+            # Reduce the array till the last non-NANs in the sequence file
+            if len(output_array_of_bounding_boxes_temp):
+                non_nan_indices = np.argwhere(np.logical_not(np.any(np.isnan(output_array_of_bounding_boxes_temp), axis=1)))
+                last_non_nan_index = non_nan_indices[-1, 0]
+                output_array_of_bounding_boxes = output_array_of_bounding_boxes_temp[:last_non_nan_index + 1]
         
     # Infer based on the last valid line of the output gt.csv file if any contents exist already
     initial_frame_number = len(output_array_of_bounding_boxes)  
@@ -438,8 +441,6 @@ def main():
                 else:
                     break
             
-            # CHECKME: What if frame has no entry?
-
         if not np.any(np.isnan(output_array_of_bounding_boxes[current_frame_number]), axis=0):
             current_gt_in_list = []
             current_validated_bounding_box = output_array_of_bounding_boxes[current_frame_number]
