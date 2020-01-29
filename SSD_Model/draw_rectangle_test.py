@@ -293,6 +293,40 @@ def get_bgr_colors_list(num_colors = 10, do_random = False):
     
     return colors_list_bgr  
 
+
+def draw_instructions_window(win_name):
+    label_height = 50
+    instruction_text_lines = ["MOUSE EVENTS:",
+                              "  Click inside box to validate bounded target",
+                              "  Click outside of box if target does not exist",
+                              "  Draw bounding box around target to correct",
+                              " ",
+                              "KEYBOARD CONTROL:",
+                              "  Next frame:     Rigth arrow (>) or Space bar (\___/)",
+                              "  Previous frame: Left arrow (<)",
+                              "  Reset frame:    'r'",
+                              "  Quit sequence:  'q'"
+                              ]
+
+    label_width = 0
+    for instruction_text in instruction_text_lines:
+        if len(instruction_text) > label_width:
+            label_width = len(instruction_text)
+    
+    label_width = int(label_width * label_height / 2.5)  # Scale width
+
+    num_lines_text = len(instruction_text_lines)
+    image = np.ones([label_height * num_lines_text, label_width, 3], np.uint8) * 165  # The multiplier value is for painting a grayish color
+    
+    for idx, instruction_text in enumerate(instruction_text_lines):
+        cv2.rectangle(image, (0, idx * label_height), (label_width, (idx + 1) * label_height), (255, 255, 255))
+        cv2.putText(image, instruction_text, (0, int((idx + 0.5) * label_height)), cv2.FONT_HERSHEY_SIMPLEX, 1,
+                    (255, 255, 255))
+    
+    cv2.namedWindow(win_name, cv2.WINDOW_AUTOSIZE)
+    cv2.imshow(win_name, image)
+    cv2.waitKey(0)
+
           
 def main():
     global image, clone, current_gt_in_list, box_colors_list, current_validated_bounding_box
@@ -365,6 +399,8 @@ def main():
     # WISH: Use the confident level to tune down the color of the box                    
     box_colors_list = get_bgr_colors_list(num_colors=5, do_random=False)
 
+    draw_instructions_window(win_name="INSTRUCTIONS")
+    
     cv2.namedWindow("image", cv2.WINDOW_NORMAL)
     cv2.setMouseCallback("image", shape_selection)
     
