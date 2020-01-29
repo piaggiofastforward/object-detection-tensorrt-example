@@ -91,8 +91,10 @@ def shape_selection(event, x, y, flags, param):
         cv2.imshow("image", image)
             
     if started_drawing_triangle and event == cv2.EVENT_MOUSEMOVE:
+        current_validated_bounding_box = []
+        current_gt_in_list = []  # Clear up old boxes 
         new_last_point  = (x, y)
-        print("Down and moving at " + "(%d, %d)" % new_last_point)
+        # print("Down and moving at " + "(%d, %d)" % new_last_point)
 
         # draw a rectangle around the region of interest
         image = clone.copy()
@@ -253,7 +255,7 @@ def fill_in_bounding_box_selected(x_min, y_min, x_max, y_max):
     width = abs(x_max - x_min)
     height = abs(y_max - y_min)
     
-    bounding_box_entry = [x_min, x_max, width, height]
+    bounding_box_entry = [x_min, y_min, width, height]
     
     return bounding_box_entry
 
@@ -326,7 +328,14 @@ def main():
     output_array_of_bounding_boxes_remaining = np.ndarray((working_num_of_frames - initial_frame_number, 4), dtype='int') * np.nan
     output_array_of_bounding_boxes = np.vstack((output_array_of_bounding_boxes, output_array_of_bounding_boxes_remaining))
 
-    cv2.namedWindow("image")
+    # TODO: use just a single color always (See color spaces from OpenCV)
+    # and use the confident level to tune down the color of the box                    
+    box_colors_list = [None] * 20  # FIXME: using a max of 20 random colors at the moment
+    for bb_idx, bb_color in enumerate(box_colors_list):
+        color_rand = (list(np.random.choice(range(256), size=3)))  
+        box_colors_list[bb_idx] = [int(color_rand[0]), int(color_rand[1]), int(color_rand[2])]
+
+    cv2.namedWindow("image", cv2.WINDOW_NORMAL)
     cv2.setMouseCallback("image", shape_selection)
     
     current_frame_number = initial_frame_number
@@ -336,17 +345,21 @@ def main():
     
     # TODO: Show image with UI instructions (lengend of keyboard commands)
     
-    while not finished_processing and current_entry_index < working_num_of_frames:    
+    while not finished_processing and current_entry_index < working_num_of_frames and current_frame_number < working_num_of_frames:    
         current_gt_in_list = []
         current_validated_bounding_box = []
         current_entry_index_matches_frame_number = False
+        current_entry_index = 0  # Always restart the search onto the target frame
 
         # Find the first entry index matching the current frame number
         while not current_entry_index_matches_frame_number:
             current_entry_index_matches_frame_number = int(rows_in[current_entry_index]['frame_number']) == current_frame_number
             if not current_entry_index_matches_frame_number:
-                current_entry_index += 1  # Keep searching for the index until a first match is found
-            
+                if current_entry_index < working_num_of_frames - 1:
+                    current_entry_index += 1  # Keep searching for the index until a first match is found
+                else:
+                    break
+                
         # Extract entries for the current frame number
         while current_entry_index_matches_frame_number:
             current_entry_index_matches_frame_number = int(rows_in[current_entry_index]['frame_number']) == current_frame_number
@@ -354,31 +367,36 @@ def main():
             if valid_entry:
                 current_gt_in_list.append(rows_in[current_entry_index])
             if current_entry_index_matches_frame_number:
-                current_entry_index += 1
+                if current_entry_index < working_num_of_frames - 1:
+                    current_entry_index += 1  # Keep comparing the next entry
+                else:
+                    break
             
             # CHECKME: What if frame has no entry?
+
+        if not np.any(np.isnan(output_array_of_bounding_boxes[current_frame_number]), axis=0):
+            current_gt_in_list = []
+            current_validated_bounding_box = output_array_of_bounding_boxes[current_frame_number]
             
         if not (target_frame_number == current_frame_number):
             current_frame_number += 1  # Advance to next frame
             continue
 
-        # TODO: use just a single color always (See color spaces from OpenCV)
-        # and use the confident level to tune down the color of the box                    
-        box_colors_list = [None] * len(current_gt_in_list)
-        for bb_idx, bb_color in enumerate(box_colors_list):
-            color_rand = (list(np.random.choice(range(256), size=3)))  
-            box_colors_list[bb_idx] = [int(color_rand[0]), int(color_rand[1]), int(color_rand[2])]
-            
         # TODO: display previous frame for sanity check of previous selection   
 
         image = images_list[current_frame_number].copy()
         clone = image.copy()
         while True:
             # Draw current bounding boxes in image
-            for entry_idx, gt_entry in enumerate(current_gt_in_list):
-                bb_start_point = (int(gt_entry['xmin']), int(gt_entry['ymin']))
-                bb_end_point = (int(gt_entry['xmax']), int(gt_entry['ymax']))
-                cv2.rectangle(image, bb_start_point, bb_end_point, box_colors_list[entry_idx], 3)
+            if len(current_validated_bounding_box) > 0:
+                bb_start_point = (int(current_validated_bounding_box[0]), int(current_validated_bounding_box[1]))
+                bb_end_point = (int(current_validated_bounding_box[0] + current_validated_bounding_box[2]), int(current_validated_bounding_box[1] + current_validated_bounding_box[3]))
+                cv2.rectangle(image, bb_start_point, bb_end_point, (0, 255, 0), 3)  # Always draw this a "green"
+            else:
+                for entry_idx, gt_entry in enumerate(current_gt_in_list):
+                    bb_start_point = (int(gt_entry['xmin']), int(gt_entry['ymin']))
+                    bb_end_point = (int(gt_entry['xmax']), int(gt_entry['ymax']))
+                    cv2.rectangle(image, bb_start_point, bb_end_point, box_colors_list[entry_idx], 3)
             
             # TODO: Add clear box case for removing all when the entire frame is the bounding box
             # This can happen when the classifier poops (may be)
@@ -388,30 +406,32 @@ def main():
             key = cv2.waitKeyEx(1) & 0xFF
 
             # press SPACE bar or RIGHT arrow key or '.' to move forward to the next frame (also saves to file)
-            if key == ord(" ") or key == 83 or key == ord("."):         
+            # NOTE: we also handle the LEFT arrow or ',' case here
+            if key == ord(" ") or key == 83 or key == ord(".") or key == 81 or key == ord(","):         
                 if len(current_validated_bounding_box) == 0:
                     # TODO: Try to compare to the closest and similar in size from previous frame
                     for valid_entry in current_gt_in_list:
                         current_validated_bounding_box = fill_in_bounding_box_selected(x_min=int(valid_entry['xmin']), y_min=int(valid_entry['ymin']), x_max=int(valid_entry['xmax']), y_max=int(valid_entry['ymax']))
 
-                # TODO: Save validated bounding box to file
+                # Save current validated bounding box to file
                 if len(current_validated_bounding_box) == 0:
                     output_array_of_bounding_boxes[target_frame_number] = [np.nan, np.nan, np.nan, np.nan]
                 else:
                     output_array_of_bounding_boxes[target_frame_number] = current_validated_bounding_box
                 print("Frame %05d saving BB: %s" % (target_frame_number, output_array_of_bounding_boxes[target_frame_number]))  # TODO: Write nan's to file
-                break
-            # press LEFT key or ',' to rewind to the previous frame
-            elif key == 81 or key == ord(","): 
-                current_entry_index = 0  # Reset seek on input csv file
-                target_frame_number = current_frame_number - 2  # Restart counting (-1 b/c it will increment next)
-                current_frame_number = initial_frame_number - 1  # Restart counting  (-1 b/c it will increment next)
+                
+                # press LEFT key or ',' to rewind to the previous frame
+                if key == 81 or key == ord(","): 
+                    current_entry_index = 0  # Reset seek on input csv file
+                    target_frame_number = current_frame_number - 2  # Restart counting (-1 b/c it will increment next)
+                    current_frame_number = -1  # Restart counting  (-1 b/c it will increment next)
                 break
             # press 'r' to reset the window
             elif key == ord("r"):
                 current_entry_index = 0  # Reset seek on input csv file
+                output_array_of_bounding_boxes[target_frame_number] = [np.nan, np.nan, np.nan, np.nan]
                 target_frame_number = current_frame_number - 1  # Restart counting (-1 b/c it will increment next)
-                current_frame_number = initial_frame_number - 1  # Restart counting  (-1 b/c it will increment next)
+                current_frame_number = -1  # Restart counting  (-1 b/c it will increment next)
                 break
             # press 'q' to quit
             elif key == ord("q"):
