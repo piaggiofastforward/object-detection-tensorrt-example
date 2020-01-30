@@ -53,6 +53,32 @@ def draw_points(img_input, points_uv_coords, num_valid_points=None, color_rgb=No
                 print("Point", pt_as_tuple, "cannot be drawn!")
 
 
+def reorder_bounding_box_corners(points_pairs):
+    '''
+    Resolve points for Top-Left corner and then Bottom-Right
+    
+    @param points_pairs: A list of 2 points with (u,v) coordinates each
+    '''
+    from sys import maxsize
+    u_min = maxsize
+    v_min = maxsize
+    u_max = 0
+    v_max = 0            
+    for pt_coord in points_pairs:
+        u, v = pt_coord
+        if u <= u_min:
+            u_min = u
+        if v <= v_min:
+            v_min = v
+        if u >= u_max:
+            u_max = u
+        if v >= v_max:
+            v_max = v
+
+    # Form resulting list of point coordinates
+    bb_corners = [(u_min, v_min), (u_max, v_max)]
+    return bb_corners
+
 def shape_selection(event, x, y, flags, param):
     # grab references to the global variables
     global ref_points_list, current_gt_in_list, started_drawing_triangle, started_drawing_triangle_and_moused_moved, current_validated_bounding_box, image, clone
@@ -121,8 +147,9 @@ def shape_selection(event, x, y, flags, param):
         # the cropping operation is finished
         if started_drawing_triangle_and_moused_moved:
             ref_points_list.append((x, y))
+            # Resolve points for Top-Left corner and then Bottom-Right
+            ref_points_list = reorder_bounding_box_corners(ref_points_list)
             current_validated_bounding_box = fill_in_bounding_box_selected(x_min=ref_points_list[0][0], y_min=ref_points_list[0][1], x_max=ref_points_list[1][0], y_max=ref_points_list[1][1])
-
             # draw a rectangle around the region of interest
             cv2.rectangle(image, ref_points_list[0], ref_points_list[1], (0, 255, 0), 2)
             cv2.imshow("image", image)
