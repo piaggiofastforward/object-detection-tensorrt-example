@@ -135,7 +135,10 @@ def resolve_path(input_path):
     from os import path, getcwd
     if input_path is None or len(input_path) == 0:
         input_path = getcwd()
-    path_of_interest = path.dirname(input_path)  # Do this in case a filename was passed instead
+    if path.isfile(input_path):  # Do this in case a filename was passed instead
+        path_of_interest = path.dirname(input_path)  
+    else:
+        path_of_interest = input_path
     resolved_user_expanded_path = path.expanduser(path_of_interest)
     resolved_realpath = path.realpath(resolved_user_expanded_path)
     return resolved_realpath
@@ -166,10 +169,10 @@ def parse_commandline_arguments():
     parser = argparse.ArgumentParser(
         description='Run object detection inference on input image.')
     
-    parser.add_argument('-i', '--images_input_path', help='Path to folder containing images', type=str)
+    parser.add_argument('-i', '--images_input_path', help='Path to folder containing images (or where images from video will be put)', type=str, required=True)
     parser.add_argument('-v', '--video_input', help='Path to a video file instead of images sequence', type=str)
-    parser.add_argument('-l', '--labels', help='The labels filename containing the bounding box information as well as frame number', type=str, required=True)
-    parser.add_argument('-o', '--output_folder', help='Path to output folder', type=str)
+    parser.add_argument('-a', '--auto_annotation', help='The automatic annnotation filename containing the bounding box information as well as frame number', type=str, required=True)
+    parser.add_argument('-o', '--output', help='Complete name for the resulting annotation file', type=str)
 
     # Parse arguments passed
     args = parser.parse_args()
@@ -212,6 +215,7 @@ def get_images(filename_template, indices_list = [], show_images = False, return
 
     path_to_files, pattern_filename = split(filename_template)
     img_names = fnmatch.filter(listdir(path_to_files), pattern_filename)
+    img_names.sort()  # Names will be sorted ascendengly
 
     if indices_list is None or len(indices_list) == 0:
         l = len(img_names)
@@ -338,7 +342,36 @@ def draw_instructions_window(win_name):
     cv2.imshow(win_name, image)
     cv2.waitKey(0)
 
-          
+def save_image_sequence_from_video(video_input_fn, images_path):
+    from os import path
+    video_file_name = path.realpath(path.expanduser(video_input_fn))
+    images_path = make_sure_path_exists(images_path)
+    prefix_name_templated = "{seq:06d}.png"
+    output_img_name_templated = path.join(images_path, prefix_name_templated)
+    
+    # Path to video file 
+    video_obj = cv2.VideoCapture(video_file_name) 
+
+    win_name = "Frame Saved"
+    cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
+      
+    # Used as counter variable 
+    count = 0
+    # checks whether frames were extracted 
+    success = 1
+    while success: 
+        # extract frames 
+        success, image = video_obj.read() 
+        if success:
+            img_name = output_img_name_templated.format(seq=count)
+            # Saves the frames with frame-count 
+            cv2.imwrite(img_name, image) 
+            cv2.imshow(win_name, image)
+            cv2.waitKey(1)
+            
+            count += 1
+        
+    print("Saved {count:d} images to {output_path:s}".format(count=count, output_path=images_path))      
 def main():
     global image, clone, current_gt_in_list, box_colors_list, current_validated_bounding_box
 
@@ -347,36 +380,25 @@ def main():
     from os import path, stat
     args = parse_commandline_arguments()
 
-    if not path.isfile(args.labels):
+    if not path.isfile(args.auto_annotation):
         print("Input bounding boxes (labels) file is missing!")
         sys.exit(1)
-    input_bounding_boxes_file = args.labels
+    input_bounding_boxes_file = args.auto_annotation
         
-    output_folder = make_sure_path_exists(args.output_folder)
-    output_gt_filename = path.join(output_folder, "gt.csv")
+    output_folder, output_fn_only = path.split(args.output)
+    output_folder = make_sure_path_exists(output_folder)
+    output_gt_filename = path.join(output_folder, output_fn_only)
 
-    use_video_file = True
-    if args.video_input is None:
-        if not (args.images_input_path is None):
-            use_video_file = False
-        else:
-            print("Path to video nor image sequence does not exist")
-            sys.exit(1)
+    images_path = args.images_input_path
+
+    # Giving precedence to any provided input video file, which will be split into images in the path provided.
+    if not args.video_input is None:  
+        save_image_sequence_from_video(video_input_fn=args.video_input, images_path=images_path)
     
-    images_list = []  # FIXME: doing this is very memory intensive because we are reading all the images at once
-    # However, we need to do this in order to allow for the "backward/forward" functionality during annotation
-    if use_video_file:
-        cam = cv2.VideoCapture(args.video_input)
-        video_frame_read_status = True
-        while video_frame_read_status:
-            video_frame_read_status, img = cam.read()
-            if video_frame_read_status:
-                images_list.append(img)
-    else:
-        # resolve images in path
-        input_img_folder = verify_path(args.images_input_path)
-        input_imgs_template = path.join(input_img_folder, "*")
-        images_list = get_images(filename_template=input_imgs_template, indices_list=[], show_images=False, return_names_only=False)
+    # Get file names of image sequence
+    input_img_folder = verify_path(images_path)  # This must now exist at this point!
+    input_imgs_template = path.join(input_img_folder, "*")
+    image_names_list = get_images(filename_template=input_imgs_template, indices_list=[], show_images=False, return_names_only=True)
     
     csvfile_in = open(input_bounding_boxes_file, newline='')
     reader = csv.DictReader(csvfile_in)
@@ -384,9 +406,9 @@ def main():
     last_frame_number = int(rows_in[len(rows_in) - 1]['frame_number'])
 
     working_num_of_frames = last_frame_number + 1  # Account for zero, too
-    if working_num_of_frames != len(images_list):
+    if working_num_of_frames != len(image_names_list):
         print("Read number of frames does NOT match ground truth information")
-        working_num_of_frames = min([working_num_of_frames, len(images_list)])
+        working_num_of_frames = min([working_num_of_frames, len(image_names_list)])
         print("Using only %d frames" % (working_num_of_frames))
         sys.exit(1)  # CHECME: exiting shouldn't be necessary
 
@@ -467,9 +489,7 @@ def main():
             current_frame_number += 1  # Advance to next frame
             continue
 
-        # TODO: display previous frame for sanity check of previous selection   
-
-        image = images_list[current_frame_number].copy()
+        image = cv2.imread(image_names_list[current_frame_number], cv2.IMREAD_ANYCOLOR)
         clone = image.copy()
         while True:
             # Draw current bounding boxes in image
