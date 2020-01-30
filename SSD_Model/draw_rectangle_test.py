@@ -59,13 +59,14 @@ def shape_selection(event, x, y, flags, param):
 
     # if the left mouse button was clicked, record the starting
     # (x, y) coordinates and indicate that cropping is being performed
-    if event == cv2.EVENT_LBUTTONDOWN:
-        started_drawing_triangle = True
+    
+    if event == cv2.EVENT_RBUTTONDOWN:
+        started_drawing_triangle = False
         started_drawing_triangle_and_moused_moved = False
         current_validated_bounding_box = []
         ref_points_list = [(x, y)]
         
-        # draw the starting point
+        # draw this point
         image = clone.copy()
         draw_points(image, points_uv_coords=ref_points_list, num_valid_points=1, color_rgb=(255, 0, 0), thickness=2)
 
@@ -87,7 +88,17 @@ def shape_selection(event, x, y, flags, param):
 
         # Regenerate the bounding box list only with valid boxes (those in which the point is contained):
         current_gt_in_list = [current_gt_in_list[valid_gt_idx] for valid_gt_idx in valid_boxes_indices]
-        
+        # CHECKME: Assuming only one box exist in the current_gt_in_list
+        for valid_entry in current_gt_in_list:
+            current_validated_bounding_box = fill_in_bounding_box_selected(x_min=int(valid_entry['xmin']), y_min=int(valid_entry['ymin']), x_max=int(valid_entry['xmax']), y_max=int(valid_entry['ymax']))
+
+        cv2.imshow("image", image)
+
+    if event == cv2.EVENT_LBUTTONDOWN:
+        started_drawing_triangle = True
+        started_drawing_triangle_and_moused_moved = False
+        current_validated_bounding_box = []
+        ref_points_list = [(x, y)]
         cv2.imshow("image", image)
             
     if started_drawing_triangle and event == cv2.EVENT_MOUSEMOVE:
@@ -104,7 +115,7 @@ def shape_selection(event, x, y, flags, param):
         started_drawing_triangle_and_moused_moved = True
 
     # check to see if the left mouse button was released
-    elif event == cv2.EVENT_LBUTTONUP:
+    elif event == cv2.EVENT_LBUTTONUP and started_drawing_triangle_and_moused_moved:
         started_drawing_triangle = False
         # record the ending (x, y) coordinates and indicate that
         # the cropping operation is finished
@@ -297,8 +308,8 @@ def get_bgr_colors_list(num_colors = 10, do_random = False):
 def draw_instructions_window(win_name):
     label_height = 50
     instruction_text_lines = ["MOUSE EVENTS:",
-                              "  Click inside box to validate bounded target",
-                              "  Click outside of box if target does not exist",
+                              "  Right Click inside box to validate bounded target",
+                              "  Right Click outside of box if target does not exist",
                               "  Draw bounding box around target to correct",
                               " ",
                               "KEYBOARD CONTROL:",
@@ -408,22 +419,29 @@ def main():
     cv2.setMouseCallback("image", shape_selection)
     
     current_frame_number = initial_frame_number
-    current_entry_index = 0
     target_frame_number = initial_frame_number  # Needed for resets and rewinds
+    previous_base_entry_indices = [0]  
     finished_processing = False
     
     # TODO: Show image with UI instructions (lengend of keyboard commands)
     
-    while not finished_processing and current_entry_index < working_num_of_frames and current_frame_number < working_num_of_frames:    
+    while not finished_processing and current_frame_number < working_num_of_frames:    
         current_gt_in_list = []
         current_validated_bounding_box = []
         current_entry_index_matches_frame_number = False
-        current_entry_index = 0  # Always restart the search onto the target frame
-
+        current_base_entry_index = previous_base_entry_indices[-1]
+        current_entry_index = current_base_entry_index  # Always restart the search onto the target frame
+        print("TARGET frame number:", target_frame_number)
+        
         # Find the first entry index matching the current frame number
         while not current_entry_index_matches_frame_number:
             current_entry_index_matches_frame_number = int(rows_in[current_entry_index]['frame_number']) == current_frame_number
-            if not current_entry_index_matches_frame_number:
+            if current_entry_index_matches_frame_number:
+                current_base_entry_index = current_entry_index
+                previous_base_entry_indices.append(current_base_entry_index)
+                # print("Added index %d to stack" % (current_base_entry_index))
+                # print("Stack currently has ", previous_base_entry_indices)
+            else:
                 if current_entry_index < working_num_of_frames - 1:
                     current_entry_index += 1  # Keep searching for the index until a first match is found
                 else:
@@ -489,16 +507,27 @@ def main():
                 
                 # press LEFT key or ',' to rewind to the previous frame
                 if key == 81 or key == ord(","): 
-                    current_entry_index = 0  # Reset seek on input csv file
-                    target_frame_number = current_frame_number - 2  # Restart counting (-1 b/c it will increment next)
-                    current_frame_number = -1  # Restart counting  (-1 b/c it will increment next)
+                    # print("REWIND:")
+                    if len(previous_base_entry_indices) > 2:
+                        removed_index = previous_base_entry_indices.pop()  # Removed this recently appended base index
+                        # print("Removed index %d from stack" % (removed_index))
+                    if len(previous_base_entry_indices) > 1:
+                        removed_index = previous_base_entry_indices.pop()  # Removed the previously appended index
+                        # print("as well as index %d from stack" % (removed_index))
+                    # print("Stack currently has ", previous_base_entry_indices)
+                    target_frame_number = target_frame_number - 2  # Restart counting (-1 b/c it will increment next)
+                    current_frame_number = target_frame_number 
                 break
             # press 'r' to reset the window
             elif key == ord("r"):
-                current_entry_index = 0  # Reset seek on input csv file
+                # print("RESET:")
+                if len(previous_base_entry_indices) > 1:
+                    removed_index = previous_base_entry_indices.pop()  # Removed this recently appended base index
+                    # print("Removed index %d from stack" % (removed_index))
+                # print("Stack currently has ", previous_base_entry_indices)
                 output_array_of_bounding_boxes[target_frame_number] = [np.nan, np.nan, np.nan, np.nan]
-                target_frame_number = current_frame_number - 1  # Restart counting (-1 b/c it will increment next)
-                current_frame_number = -1  # Restart counting  (-1 b/c it will increment next)
+                target_frame_number = target_frame_number - 1  # Restart counting (-1 b/c it will increment next)
+                current_frame_number = target_frame_number
                 break
             # press 'q' to quit
             elif key == ord("q"):
