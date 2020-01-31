@@ -164,6 +164,8 @@ def parse_commandline_arguments():
                         help='location of bags for annotation')
     parser.add_argument('-rd','--results_directory', default='/nfs/groundtruth', 
                         help='location of results folder')
+    parser.add_argument('-dd','--decoder_directory', default='/mnt/SSD_Model/logdecoder',
+                        help='location of decoder binary')
 
     # Parse arguments passed
     args = parser.parse_args()
@@ -205,8 +207,8 @@ def main():
     filter_list = []
 
     #De-bagger
-    BAGS_PATHS = dc.get_bags_in_folder(args.bags_directory)
-    DECODER_PATH = '/mnt/SSD_Model/logdecoder'
+    bags_paths = dc.get_bags_in_folder(args.bags_directory)
+    decoder_path = args.decoder_directory
 
     
     # Fetch .uff model path, convert from .pb
@@ -234,15 +236,15 @@ def main():
         keep_list = args.keep.split(",")
 
 
-    for bag_path in BAGS_PATHS:
+    for bag_path in bags_paths:
         print(bag_path)
 
         out_file_name = os.path.split(bag_path)[1]
         
-        dc.decode(DECODER_PATH,bag_path) 
+        dc.decode(decoder_path,bag_path) 
 
-        outdir = args.results_directory+'/'+out_file_name[:len(out_file_name)-4]+'/TD7740/rgb-center'
-        outdir_gray = args.results_directory+'/'+out_file_name[:len(out_file_name)-4]+'/RS430'
+        outdir = args.results_directory+'/'+out_file_name[:len(out_file_name)-4]+'/td7740/rgb-center'
+        outdir_gray = args.results_directory+'/'+out_file_name[:len(out_file_name)-4]+'/rs430/gray'
 
         if not args.grayscale:
             try:
