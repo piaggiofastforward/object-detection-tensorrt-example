@@ -419,7 +419,7 @@ def draw_instructions_window(win_name):
     label_width = int(label_width * label_height / 2.5)  # Scale width
 
     num_lines_text = len(instruction_text_lines)
-    image = np.ones([label_height * num_lines_text, label_width, 3], np.uint8) * 165  # The multiplier value is for painting a grayish color
+    image = np.ones([label_height * num_lines_text, label_width, 3], np.uint8) * 200  # The multiplier value is for painting a grayish color
     
     for idx, instruction_text in enumerate(instruction_text_lines):
         cv2.rectangle(image, (0, idx * label_height), (label_width, (idx + 1) * label_height), (255, 255, 255))
@@ -483,15 +483,14 @@ def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_f
     
     csvfile_in = open(input_bounding_boxes_filename, newline='')
     reader = csv.DictReader(csvfile_in)
-    rows_in = list(reader)
-    last_frame_number = int(rows_in[len(rows_in) - 1]['frame_number'])
+    rows_auto_gt_input = list(reader)
+    last_frame_number = int(rows_auto_gt_input[len(rows_auto_gt_input) - 1]['frame_number'])
 
     working_num_of_frames = last_frame_number + 1  # Account for zero, too
     if working_num_of_frames != len(image_names_list):
         print("Read number of frames does NOT match ground truth information")
-        working_num_of_frames = min([working_num_of_frames, len(image_names_list)])
-        print("Using only %d frames" % (working_num_of_frames))
-        sys.exit(1)  # CHECME: exiting shouldn't be necessary # FIXME: to use all images!
+        working_num_of_frames = len(image_names_list)
+        print("Using all %d frames" % (working_num_of_frames))
 
     # Start with an array full of NANs
     output_array_of_bounding_boxes = np.ndarray((0, 4), dtype='int')
@@ -521,6 +520,10 @@ def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_f
     cv2.namedWindow("image", cv2.WINDOW_NORMAL)
     cv2.setMouseCallback("image", shape_selection)
     
+    # When we are starting on the last frame, we may not want to be done immediately
+    if initial_frame_number >= working_num_of_frames - 1: 
+        initial_frame_number = initial_frame_number - 1
+        
     current_frame_number = initial_frame_number
     target_frame_number = initial_frame_number  # Needed for resets and rewinds
     previous_base_entry_indices = [0]  
@@ -536,27 +539,27 @@ def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_f
         print("TARGET frame number:", target_frame_number)
         
         # Find the first entry index matching the current frame number
-        while not current_entry_index_matches_frame_number:
-            current_entry_index_matches_frame_number = int(rows_in[current_entry_index]['frame_number']) == current_frame_number
+        while not current_entry_index_matches_frame_number and current_entry_index < len(rows_auto_gt_input):
+            current_entry_index_matches_frame_number = int(rows_auto_gt_input[current_entry_index]['frame_number']) == current_frame_number
             if current_entry_index_matches_frame_number:
                 current_base_entry_index = current_entry_index
                 previous_base_entry_indices.append(current_base_entry_index)
                 # print("Added index %d to stack" % (current_base_entry_index))
                 # print("Stack currently has ", previous_base_entry_indices)
             else:
-                if current_entry_index < working_num_of_frames - 1:
+                if current_entry_index < len(rows_auto_gt_input):
                     current_entry_index += 1  # Keep searching for the index until a first match is found
                 else:
                     break
                 
         # Extract entries for the current frame number
-        while current_entry_index_matches_frame_number:
-            current_entry_index_matches_frame_number = int(rows_in[current_entry_index]['frame_number']) == current_frame_number
-            valid_entry = current_entry_index_matches_frame_number and rows_in[current_entry_index]['class_name'] == "person" 
+        while current_entry_index_matches_frame_number and current_entry_index < len(rows_auto_gt_input):
+            current_entry_index_matches_frame_number = int(rows_auto_gt_input[current_entry_index]['frame_number']) == current_frame_number
+            valid_entry = current_entry_index_matches_frame_number and rows_auto_gt_input[current_entry_index]['class_name'] == "person" 
             if valid_entry:
-                current_gt_in_list.append(rows_in[current_entry_index])
+                current_gt_in_list.append(rows_auto_gt_input[current_entry_index])
             if current_entry_index_matches_frame_number:
-                if current_entry_index < working_num_of_frames - 1:
+                if current_entry_index < len(rows_auto_gt_input):
                     current_entry_index += 1  # Keep comparing the next entry
                 else:
                     break
@@ -570,24 +573,48 @@ def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_f
             continue
 
         image = cv2.imread(image_names_list[target_frame_number], cv2.IMREAD_COLOR)
-        clone = image.copy()  # FIXME: cloning
+        clone = image.copy()
         while True:
+            # Draw last validated bounding box as a yellow dotted-edge rectangle    
+            if target_frame_number > 0 and not np.any(np.isnan(output_array_of_bounding_boxes[target_frame_number - 1]), axis=0):
+                prev_bb_start_point = (int(output_array_of_bounding_boxes[target_frame_number - 1][0]), int(output_array_of_bounding_boxes[target_frame_number - 1][1]))
+                prev_bb_end_point = (int(prev_bb_start_point[0] + output_array_of_bounding_boxes[target_frame_number - 1][2]), int(prev_bb_start_point[1] + output_array_of_bounding_boxes[target_frame_number - 1][3]))
+                drawrect(image, pt1=prev_bb_start_point, pt2=prev_bb_end_point, color=(0, 255, 255), thickness=2, style='dotted')
+
             # Draw current bounding boxes in image
             if len(current_validated_bounding_box) > 0:
                 bb_start_point = (int(current_validated_bounding_box[0]), int(current_validated_bounding_box[1]))
                 bb_end_point = (int(current_validated_bounding_box[0] + current_validated_bounding_box[2]), int(current_validated_bounding_box[1] + current_validated_bounding_box[3]))
                 cv2.rectangle(image, bb_start_point, bb_end_point, (0, 255, 0), 3)  # Always draw this a "green"
             else:
+                # Pick the closest and similar in size bounding box stablished in the previous frame
+                if current_frame_number > 0 and not np.any(np.isnan(output_array_of_bounding_boxes[current_frame_number - 1]), axis=0):
+                    previous_gt_centroid = get_centroid(*output_array_of_bounding_boxes[current_frame_number - 1])
+                    smallest_centroids_distance = np.inf
+                    for valid_entry in current_gt_in_list:
+                        candidate_bounding_box = fill_in_bounding_box_selected(x_min=int(valid_entry['xmin']), y_min=int(valid_entry['ymin']), x_max=int(valid_entry['xmax']), y_max=int(valid_entry['ymax']))
+                        candidate_gt_centroid = get_centroid(*candidate_bounding_box)
+                        # measure distances (L2 norm) between centroids
+                        current_centroids_distance = ((previous_gt_centroid[0] - candidate_gt_centroid[0]) ** 2 + (previous_gt_centroid[1] - candidate_gt_centroid[1]) ** 2) ** 0.5
+                        if current_centroids_distance < smallest_centroids_distance:
+                            smallest_centroids_distance = current_centroids_distance
+                            current_validated_bounding_box = candidate_bounding_box
+                            # TODO: it would be helpful to validate also by the size similarity of the bounding boxes
+                            # However, its becoming too heuristic!
+                else:
+                    # Pick box with highest confidence
+                    highest_confidence = 0.
+                    for valid_entry in current_gt_in_list:
+                        current_confidence = float(valid_entry['confidence'][:-1])  # We need to remove the percent sign
+                        if current_confidence >= highest_confidence:
+                            highest_confidence = current_confidence
+                            current_validated_bounding_box = fill_in_bounding_box_selected(x_min=int(valid_entry['xmin']), y_min=int(valid_entry['ymin']), x_max=int(valid_entry['xmax']), y_max=int(valid_entry['ymax']))
+                
                 for entry_idx, gt_entry in enumerate(current_gt_in_list):
                     bb_start_point = (int(gt_entry['xmin']), int(gt_entry['ymin']))
                     bb_end_point = (int(gt_entry['xmax']), int(gt_entry['ymax']))
                     cv2.rectangle(image, bb_start_point, bb_end_point, box_colors_list[entry_idx], 3)
 
-            # Draw last validated bounding box as a yellow dotted-edge rectangle    
-            if target_frame_number > 0 and not np.any(np.isnan(output_array_of_bounding_boxes[target_frame_number - 1]), axis=0):
-                prev_bb_start_point = (int(output_array_of_bounding_boxes[target_frame_number - 1][0]), int(output_array_of_bounding_boxes[target_frame_number - 1][1]))
-                prev_bb_end_point = (int(prev_bb_start_point[0] + output_array_of_bounding_boxes[target_frame_number - 1][2]), int(prev_bb_start_point[1] + output_array_of_bounding_boxes[target_frame_number - 1][3]))
-                drawrect(image, pt1=prev_bb_start_point, pt2=prev_bb_end_point, color=(0, 255, 255), thickness=2, style='dotted')
             
             # display the image and wait for a keypress
             cv2.imshow("image", image)
@@ -599,30 +626,6 @@ def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_f
                 if highest_visited_frame_number <= target_frame_number:
                     highest_visited_frame_number = target_frame_number
                 
-                if len(current_validated_bounding_box) == 0:
-                    # Pick the closest and similar in size bounding box stablished in the previous frame
-                    if current_frame_number > 0 and not np.any(np.isnan(output_array_of_bounding_boxes[current_frame_number - 1]), axis=0):
-                        previous_gt_centroid = get_centroid(*output_array_of_bounding_boxes[current_frame_number - 1])
-                        smallest_centroids_distance = np.inf
-                        for valid_entry in current_gt_in_list:
-                            candidate_bounding_box = fill_in_bounding_box_selected(x_min=int(valid_entry['xmin']), y_min=int(valid_entry['ymin']), x_max=int(valid_entry['xmax']), y_max=int(valid_entry['ymax']))
-                            candidate_gt_centroid = get_centroid(*candidate_bounding_box)
-                            # measure distances (L2 norm) between centroids
-                            current_centroids_distance = ((previous_gt_centroid[0] - candidate_gt_centroid[0]) ** 2 + (previous_gt_centroid[1] - candidate_gt_centroid[1]) ** 2) ** 0.5
-                            if current_centroids_distance < smallest_centroids_distance:
-                                smallest_centroids_distance = current_centroids_distance
-                                current_validated_bounding_box = candidate_bounding_box
-                                # TODO: it would be helpful to validate also by the size similarity of the bounding boxes
-                                # However, its becoming too heuristic!
-                    else:
-                        # Pick box with highest confidence
-                        highest_confidence = 0.
-                        for valid_entry in current_gt_in_list:
-                            current_confidence = float(valid_entry['confidence'][:-1])  # We need to remove the percent sign
-                            if current_confidence >= highest_confidence:
-                                highest_confidence = current_confidence
-                                current_validated_bounding_box = fill_in_bounding_box_selected(x_min=int(valid_entry['xmin']), y_min=int(valid_entry['ymin']), x_max=int(valid_entry['xmax']), y_max=int(valid_entry['ymax']))
-                    
                 # Save current validated bounding box to file
                 if len(current_validated_bounding_box) == 0:
                     output_array_of_bounding_boxes[target_frame_number] = [np.nan, np.nan, np.nan, np.nan]
@@ -633,15 +636,19 @@ def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_f
                 # press LEFT key or ',' to rewind to the previous frame
                 if key == 81 or key == ord(","): 
                     # print("REWIND:")
-                    if len(previous_base_entry_indices) > 2:
-                        removed_index = previous_base_entry_indices.pop()  # Removed this recently appended base index
-                        # print("Removed index %d from stack" % (removed_index))
-                    if len(previous_base_entry_indices) > 1:
-                        removed_index = previous_base_entry_indices.pop()  # Removed the previously appended index
-                        # print("as well as index %d from stack" % (removed_index))
-                    # print("Stack currently has ", previous_base_entry_indices)
-                    target_frame_number = target_frame_number - 2  # Restart counting (-1 b/c it will increment next)
-                    current_frame_number = target_frame_number 
+                    if current_frame_number > 0:
+                        if len(previous_base_entry_indices) > 2:
+                            removed_index = previous_base_entry_indices.pop()  # Removed this recently appended base index
+                            # print("Removed index %d from stack" % (removed_index))
+                        if len(previous_base_entry_indices) > 1:
+                            removed_index = previous_base_entry_indices.pop()  # Removed the previously appended index
+                            # print("as well as index %d from stack" % (removed_index))
+                        # print("Stack currently has ", previous_base_entry_indices)
+                        target_frame_number = target_frame_number - 2  # Restart counting (-1 b/c it will increment next)
+                        current_frame_number = target_frame_number 
+                    else:
+                        target_frame_number = target_frame_number - 1  # Restart counting (-1 b/c it will increment next)
+                        current_frame_number = target_frame_number
                 break
             # press 'r' to reset the window
             elif key == ord("r"):
