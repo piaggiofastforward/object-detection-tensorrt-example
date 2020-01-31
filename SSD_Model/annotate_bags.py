@@ -162,7 +162,7 @@ def parse_commandline_arguments():
                         help='use grayscale instead of RGB data')
     parser.add_argument('-bd','--bags_directory', default='/media/bags', 
                         help='location of bags for annotation')
-    parser.add_argument('-rd','--results_directory', default='/media/auto_annotated_results', 
+    parser.add_argument('-rd','--results_directory', default='/nfs/groundtruth', 
                         help='location of results folder')
 
     # Parse arguments passed
@@ -206,8 +206,9 @@ def main():
 
     #De-bagger
     BAGS_PATHS = dc.get_bags_in_folder(args.bags_directory)
-    DECODER_PATH = 'logdecoder'
+    DECODER_PATH = '/mnt/SSD_Model/logdecoder'
 
+    
     # Fetch .uff model path, convert from .pb
     # if needed, using prepare_ssd_model
     ssd_model_uff_path = PATHS.get_model_uff_path(MODEL_NAME)
@@ -223,6 +224,7 @@ def main():
 
     print("TRT ENGINE PATH", args.trt_engine_path)
     
+    
     if args.filemodetxt:
         filemodetxt = True
     else:
@@ -231,33 +233,45 @@ def main():
     if args.keep:
         keep_list = args.keep.split(",")
 
+
     for bag_path in BAGS_PATHS:
         print(bag_path)
+
         out_file_name = os.path.split(bag_path)[1]
-        dc.decode(DECODER_PATH,bag_path)
+        
+        dc.decode(DECODER_PATH,bag_path) 
+
+        outdir = args.results_directory+'/'+out_file_name[:len(out_file_name)-4]+'/TD7740/rgb-center'
+        outdir_gray = args.results_directory+'/'+out_file_name[:len(out_file_name)-4]+'/RS430'
+
+        if not args.grayscale:
+            try:
+                if not os.path.exists(outdir):
+                    os.makedirs(outdir,mode=0o777)
+                else:
+                    continue
+            except OSError:
+                print("failed to create output directory " + outdir)
+        
+        if args.grayscale:
+            try:
+                if not os.path.exists(outdir_gray):
+                    os.makedirs(outdir_gray,mode=0o777)
+                else:
+                    continue
+            except OSError:
+                print("failed to create output directory " + outdir_gray)
+
+        
         if args.grayscale:
             print("--- USING GRAYSCALE IMAGES ---")
-            frames = dc.read_realsense_grayscale()
-            out_file_name = args.results_directory+'/AAR_'+out_file_name[:len(out_file_name)-4]+'_gray.csv'
+            out_file_name = os.path.join(outdir_gray,'automatic_boundingbox_'+out_file_name[:len(out_file_name)-4]+'_gray.csv')
         else:
-            frame = dc.read_rgb()
-            out_file_name = args.results_directory+'/AAR_'+out_file_name[:len(out_file_name)-4]+'.csv'
+            out_file_name = os.path.join(outdir,'automatic_boundingbox_'+out_file_name[:len(out_file_name)-4]+'.csv')
         
-        print(len(frames))
-        if len(frames)<1:
-            continue
-
-        print(frames[0].shape)
-
-        width = frames[0].shape[1]
-        height = frames[0].shape[0]
-
-        try:
-            if not os.path.exists(args.results_directory):
-                os.makedirs(args.results_directory)
-        except OSError:
-            exitError("failed to create output directory " + args.results_directory)
-
+        width = 640 #frames[0].shape[1]
+        height = 480 #frames[0].shape[0]
+        
         currentFrame = 0
         
         if filemodetxt == False:
@@ -265,6 +279,7 @@ def main():
         else:
             bb_filename = out_file_name[:len(out_file_name)-4]+'.txt'
         
+
         bb_file_handle = open(bb_filename, "w")
         
         # write header
@@ -273,11 +288,21 @@ def main():
                 "frame_number,class_name,confidence,idx,xmin,ymin,xmax,ymax\n")
         
         # Loop for running inference on frames from the webcam
-        for i in range(len(frames)):
-            image_np = frames[i]
-            if args.grayscale:
-                image_np = cv2.cvtColor(image_np,cv2.COLOR_GRAY2RGB)
+        if args.grayscale:
+            generator = dc.next_grayscale_frame()
+        else:
+            generator = dc.next_rgb_frame()
+        i=0
+        while(True):
+            header, image_np = next(generator)
 
+            if args.grayscale and image_np is not None:
+                image_np = cv2.cvtColor(image_np,cv2.COLOR_GRAY2RGB)
+            elif not args.grayscale and image_np[0] is not None:
+                image_np = image_np[1]
+            else:
+                break
+                    
             # Actually run inference
             detection_out, keep_count_out = trt_inference_wrapper.infer_webcam(
                 image_np)
@@ -301,9 +326,9 @@ def main():
             if cv2.waitKey(25) & 0xFF == ord('q'):
                 cv2.destroyAllWindows()
                 break
+
         bb_file_handle.flush()
         bb_file_handle.close()
-
         cv2.destroyAllWindows()
 
 

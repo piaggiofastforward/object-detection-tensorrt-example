@@ -33,13 +33,15 @@ function run_docker {
 
 # Configure using arguements given to this script
 extra_args=""
-while getopts "hd:" OPTION; do
+while getopts "hd:m:" OPTION; do
   case $OPTION in
+  m)
+    echo $OPTARG
+    extra_args="$extra_args -v $OPTARG:/nfs "
+    ;;
   d)
-    echo "Adding extra options provided"
-  
+    echo $OPTARG
     extra_args="$extra_args -v $OPTARG:/media "
-    run_docker
     ;;
   h)
     usage
