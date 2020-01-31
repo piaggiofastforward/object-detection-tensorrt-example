@@ -318,7 +318,7 @@ def get_bgr_colors_list(num_colors = 10, do_random = False):
         predifined_rgb_colors = [None] * max_num_predifined_colors
         predifined_rgb_colors[0] = (255, 0, 0)  # Red     #FF0000     (255,0,0)
         predifined_rgb_colors[1] = (0, 0, 255)  # Blue     #0000FF     (0,0,255)
-        predifined_rgb_colors[2] = (255, 255, 0)  # Yellow     #FFFF00     (255,255,0)
+        predifined_rgb_colors[2] =  (245,222,179)  # wheat     #F5DEB3     (245,222,179)
         predifined_rgb_colors[3] = (0, 255, 255)  # Cyan / Aqua     #00FFFF     (0,255,255)
         predifined_rgb_colors[4] = (255, 0, 255)  # Magenta / Fuchsia     #FF00FF     (255,0,255)
         predifined_rgb_colors[5] = (255, 165, 0)  # orange     #FFA500     (255,165,0)
@@ -343,6 +343,56 @@ def get_bgr_colors_list(num_colors = 10, do_random = False):
     
     return colors_list_bgr  
 
+
+def drawline(img, pt1, pt2, color, thickness=1, style='dotted', gap=10):
+    '''
+    Custom drawing of lines with support for dotted style
+    '''
+    dist = ((pt1[0] - pt2[0]) ** 2 + (pt1[1] - pt2[1]) ** 2) ** .5
+    pts = []
+    for i in  np.arange(0, dist, gap):
+        r = i / dist
+        x = int((pt1[0] * (1 - r) + pt2[0] * r) + .5)
+        y = int((pt1[1] * (1 - r) + pt2[1] * r) + .5)
+        p = (x, y)
+        pts.append(p)
+
+    if style == 'dotted':
+        for p in pts:
+            cv2.circle(img, p, thickness, color, -1)
+    else:
+        s = pts[0]
+        e = pts[0]
+        i = 0
+        for p in pts:
+            s = e
+            e = p
+            if i % 2 == 1:
+                cv2.line(img, s, e, color, thickness)
+            i += 1
+
+
+def drawpoly(img, pts, color, thickness=1, style='dotted',):
+    '''
+    Custom drawing of polygons with support for dotted-edge style
+    '''
+    s = pts[0]
+    e = pts[0]
+    pts.append(pts.pop(0))
+    for p in pts:
+        s = e
+        e = p
+        drawline(img, s, e, color, thickness, style)
+
+
+def drawrect(img, pt1, pt2, color, thickness=1, style='dotted'):
+    '''
+    Custom drawing of rectangles with support for dotted-edge style
+    '''
+    pts = [pt1, (pt2[0], pt1[1]), pt2, (pt1[0], pt2[1])] 
+    drawpoly(img, pts, color, thickness, style)
+
+    
 def draw_instructions_window(win_name):
     '''
     Show image with UI instructions (lengend of mouse and keyboard commands)
@@ -352,6 +402,7 @@ def draw_instructions_window(win_name):
                               "  Right Click inside box to validate bounded target",
                               "  Right Click outside of box if target does not exist",
                               "  Draw bounding box around target to correct",
+                              "     NOTE: yellow dotted box refers to previous frame.",
                               " ",
                               "KEYBOARD CONTROL:",
                               "  Next frame:     Rigth arrow (>) or Space bar (\___/)",
@@ -419,6 +470,8 @@ def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_f
     @param input_bounding_boxes_filename: The complete name of the file containing the automatic bounding boxes information
     @param output_bounding_boxes_filename: The complete name of the file that will store the validated bounding boxes
     '''
+    global image, clone, current_gt_in_list, box_colors_list, current_validated_bounding_box
+
     import csv
     import sys
     from os import path, stat
@@ -438,7 +491,7 @@ def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_f
         print("Read number of frames does NOT match ground truth information")
         working_num_of_frames = min([working_num_of_frames, len(image_names_list)])
         print("Using only %d frames" % (working_num_of_frames))
-        sys.exit(1)  # CHECME: exiting shouldn't be necessary
+        sys.exit(1)  # CHECME: exiting shouldn't be necessary # FIXME: to use all images!
 
     # Start with an array full of NANs
     output_array_of_bounding_boxes = np.ndarray((0, 4), dtype='int')
@@ -472,6 +525,7 @@ def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_f
     target_frame_number = initial_frame_number  # Needed for resets and rewinds
     previous_base_entry_indices = [0]  
     finished_processing = False
+    highest_visited_frame_number = target_frame_number - 1
     
     while not finished_processing and current_frame_number < working_num_of_frames:    
         current_gt_in_list = []
@@ -515,8 +569,8 @@ def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_f
             current_frame_number += 1  # Advance to next frame
             continue
 
-        image = cv2.imread(image_names_list[current_frame_number], cv2.IMREAD_ANYCOLOR)
-        clone = image.copy()
+        image = cv2.imread(image_names_list[target_frame_number], cv2.IMREAD_COLOR)
+        clone = image.copy()  # FIXME: cloning
         while True:
             # Draw current bounding boxes in image
             if len(current_validated_bounding_box) > 0:
@@ -528,6 +582,12 @@ def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_f
                     bb_start_point = (int(gt_entry['xmin']), int(gt_entry['ymin']))
                     bb_end_point = (int(gt_entry['xmax']), int(gt_entry['ymax']))
                     cv2.rectangle(image, bb_start_point, bb_end_point, box_colors_list[entry_idx], 3)
+
+            # Draw last validated bounding box as a yellow dotted-edge rectangle    
+            if target_frame_number > 0 and not np.any(np.isnan(output_array_of_bounding_boxes[target_frame_number - 1]), axis=0):
+                prev_bb_start_point = (int(output_array_of_bounding_boxes[target_frame_number - 1][0]), int(output_array_of_bounding_boxes[target_frame_number - 1][1]))
+                prev_bb_end_point = (int(prev_bb_start_point[0] + output_array_of_bounding_boxes[target_frame_number - 1][2]), int(prev_bb_start_point[1] + output_array_of_bounding_boxes[target_frame_number - 1][3]))
+                drawrect(image, pt1=prev_bb_start_point, pt2=prev_bb_end_point, color=(0, 255, 255), thickness=2, style='dotted')
             
             # display the image and wait for a keypress
             cv2.imshow("image", image)
@@ -536,6 +596,9 @@ def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_f
             # press SPACE bar or RIGHT arrow key or '.' to move forward to the next frame (also saves to file)
             # NOTE: we also handle the LEFT arrow or ',' case here
             if key == ord(" ") or key == 83 or key == ord(".") or key == 81 or key == ord(","):         
+                if highest_visited_frame_number <= target_frame_number:
+                    highest_visited_frame_number = target_frame_number
+                
                 if len(current_validated_bounding_box) == 0:
                     # Pick the closest and similar in size bounding box stablished in the previous frame
                     if current_frame_number > 0 and not np.any(np.isnan(output_array_of_bounding_boxes[current_frame_number - 1]), axis=0):
@@ -603,18 +666,17 @@ def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_f
             target_frame_number = 0
         
     # Write results of output_array_of_bounding_boxes to file
-    np.savetxt(output_bounding_boxes_filename, output_array_of_bounding_boxes, delimiter=',', fmt='%.0f')
+    # NOTE: only saving until the highest visited frame
+    np.savetxt(output_bounding_boxes_filename, output_array_of_bounding_boxes[:highest_visited_frame_number + 1], delimiter=',', fmt='%.0f')
         
     # close all open windows
     cv2.destroyAllWindows() 
     csvfile_in.close()
     
-    print("Done processing input file %s" % (input_bounding_boxes_filename))
+    print("Done processing input file %s [highest validated frame = %06d]" % (input_bounding_boxes_filename, highest_visited_frame_number))
 
 
 def main():
-    global image, clone, current_gt_in_list, box_colors_list, current_validated_bounding_box
-
     import sys
     from os import path
     args = parse_commandline_arguments()
