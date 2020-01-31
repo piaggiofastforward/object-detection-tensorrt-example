@@ -120,6 +120,11 @@ def draw_instructions_window(win_name, instruction_text_lines):
     cv2.waitKey(1)
 
 
+def str2bool(v):
+    # Used for the argsparser to simulate a boolean type
+    return v.lower() in ("yes", "true", "t", "on", "1")
+
+
 def resolve_path(input_path):
     from os import path, getcwd
     if input_path is None or len(input_path) == 0:

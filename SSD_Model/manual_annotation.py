@@ -11,7 +11,8 @@ import numpy as np
 import argparse
 
 from common import draw_instructions_window, draw_points, draw_rectangle
-from common import get_images, save_image_sequence_from_video, get_bgr_colors_list, verify_path, make_sure_path_exists
+from common import get_images, save_image_sequence_from_video, get_bgr_colors_list
+from common import str2bool, verify_path, make_sure_path_exists
 
 # Initialize the shared lists
 ref_points_list = []  # reference points
@@ -42,15 +43,22 @@ def parse_commandline_arguments():
     """Parses command line arguments and adjusts internal data structures."""
 
     # Define script command line arguments
-    parser = argparse.ArgumentParser(
-        description='Run object detection inference on input image.')
+    parser = argparse.ArgumentParser(description='This tool helps validate existing automatically-annotated (labelled) sequences.')
+    parser.register('type', 'bool', str2bool)  # add type 'bool' keyword to the registry because it doesn't exist by default!
     
-    parser.add_argument('-i', '--images_input_path', help='Path to folder containing images (or where images from video will be put)', type=str, required=True)
-    parser.add_argument('-v', '--video_input', help='Path to a video file instead of images sequence', type=str)
-    parser.add_argument('-a', '--auto_annotation', help='The automatic annnotation filename containing the bounding box information as well as frame number', type=str, required=True)
-    parser.add_argument('-o', '--output', help='Complete name for the resulting annotation file', type=str)
+    parser._action_groups.pop()
+
+    required = parser.add_argument_group('required arguments')
+    optional = parser.add_argument_group('optional arguments')
+    
+    required.add_argument('-i', '--images_input_path', help='Path to folder containing images (or where images from video will be put)', type=str, required=True)
+    required.add_argument('-a', '--auto_annotation', help='The automatic annnotation filename containing the bounding box information as well as frame number', type=str, required=True)
+    required.add_argument('-o', '--output', help='Complete name for the resulting annotation file', type=str)
+
+    optional.add_argument('-v', '--video_input', help='Path to a video file instead of images sequence', type=str)
 
     # Parse arguments passed
+    parser.print_help()
     args = parser.parse_args()
     return args
 
