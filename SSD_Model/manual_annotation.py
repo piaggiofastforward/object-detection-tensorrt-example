@@ -191,7 +191,6 @@ def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_f
     global image, clone, current_gt_in_list, box_colors_list, current_validated_bounding_box
 
     import csv
-    import sys
     from os import path, stat
     
     # Get file names of image sequence
@@ -248,6 +247,7 @@ def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_f
     finished_processing = False
     highest_visited_frame_number = target_frame_number - 1
     
+    has_been_reset = False
     while not finished_processing and current_frame_number < working_num_of_frames:    
         current_gt_in_list = []
         current_validated_bounding_box = []
@@ -305,28 +305,29 @@ def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_f
                 bb_end_point = (int(current_validated_bounding_box[0] + current_validated_bounding_box[2]), int(current_validated_bounding_box[1] + current_validated_bounding_box[3]))
                 cv2.rectangle(image, bb_start_point, bb_end_point, (0, 255, 0), 3)  # Always draw this a "green"
             else:
-                # Pick the closest and similar in size bounding box stablished in the previous frame
-                if current_frame_number > 0 and not np.any(np.isnan(output_array_of_bounding_boxes[current_frame_number - 1]), axis=0):
-                    previous_gt_centroid = get_centroid(*output_array_of_bounding_boxes[current_frame_number - 1])
-                    smallest_centroids_distance = np.inf
-                    for valid_entry in current_gt_in_list:
-                        candidate_bounding_box = fill_in_bounding_box_selected(x_min=int(valid_entry['xmin']), y_min=int(valid_entry['ymin']), x_max=int(valid_entry['xmax']), y_max=int(valid_entry['ymax']))
-                        candidate_gt_centroid = get_centroid(*candidate_bounding_box)
-                        # measure distances (L2 norm) between centroids
-                        current_centroids_distance = ((previous_gt_centroid[0] - candidate_gt_centroid[0]) ** 2 + (previous_gt_centroid[1] - candidate_gt_centroid[1]) ** 2) ** 0.5
-                        if current_centroids_distance < smallest_centroids_distance:
-                            smallest_centroids_distance = current_centroids_distance
-                            current_validated_bounding_box = candidate_bounding_box
-                            # TODO: it would be helpful to validate also by the size similarity of the bounding boxes
-                            # However, its becoming too heuristic!
-                else:
-                    # Pick box with highest confidence
-                    highest_confidence = 0.
-                    for valid_entry in current_gt_in_list:
-                        current_confidence = float(valid_entry['confidence'][:-1])  # We need to remove the percent sign
-                        if current_confidence >= highest_confidence:
-                            highest_confidence = current_confidence
-                            current_validated_bounding_box = fill_in_bounding_box_selected(x_min=int(valid_entry['xmin']), y_min=int(valid_entry['ymin']), x_max=int(valid_entry['xmax']), y_max=int(valid_entry['ymax']))
+                if not has_been_reset:
+                    # Pick the closest and similar in size bounding box stablished in the previous frame
+                    if current_frame_number > 0 and not np.any(np.isnan(output_array_of_bounding_boxes[current_frame_number - 1]), axis=0):
+                        previous_gt_centroid = get_centroid(*output_array_of_bounding_boxes[current_frame_number - 1])
+                        smallest_centroids_distance = np.inf
+                        for valid_entry in current_gt_in_list:
+                            candidate_bounding_box = fill_in_bounding_box_selected(x_min=int(valid_entry['xmin']), y_min=int(valid_entry['ymin']), x_max=int(valid_entry['xmax']), y_max=int(valid_entry['ymax']))
+                            candidate_gt_centroid = get_centroid(*candidate_bounding_box)
+                            # measure distances (L2 norm) between centroids
+                            current_centroids_distance = ((previous_gt_centroid[0] - candidate_gt_centroid[0]) ** 2 + (previous_gt_centroid[1] - candidate_gt_centroid[1]) ** 2) ** 0.5
+                            if current_centroids_distance < smallest_centroids_distance:
+                                smallest_centroids_distance = current_centroids_distance
+                                current_validated_bounding_box = candidate_bounding_box
+                                # TODO: it would be helpful to validate also by the size similarity of the bounding boxes
+                                # However, its becoming too heuristic!
+                    else:
+                        # Pick box with highest confidence
+                        highest_confidence = 0.
+                        for valid_entry in current_gt_in_list:
+                            current_confidence = float(valid_entry['confidence'][:-1])  # We need to remove the percent sign
+                            if current_confidence >= highest_confidence:
+                                highest_confidence = current_confidence
+                                current_validated_bounding_box = fill_in_bounding_box_selected(x_min=int(valid_entry['xmin']), y_min=int(valid_entry['ymin']), x_max=int(valid_entry['xmax']), y_max=int(valid_entry['ymax']))
                 
                 for entry_idx, gt_entry in enumerate(current_gt_in_list):
                     bb_start_point = (int(gt_entry['xmin']), int(gt_entry['ymin']))
@@ -367,6 +368,9 @@ def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_f
                     else:
                         target_frame_number = target_frame_number - 1  # Restart counting (-1 b/c it will increment next)
                         current_frame_number = target_frame_number
+                        
+                has_been_reset = False
+                
                 break
             # press 'r' to reset the window
             elif key == ord("r"):
@@ -378,6 +382,7 @@ def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_f
                 output_array_of_bounding_boxes[target_frame_number] = [np.nan, np.nan, np.nan, np.nan]
                 target_frame_number = target_frame_number - 1  # Restart counting (-1 b/c it will increment next)
                 current_frame_number = target_frame_number
+                has_been_reset = True
                 break
             # press 'q' to quit
             elif key == ord("q"):
