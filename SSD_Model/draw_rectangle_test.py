@@ -29,8 +29,10 @@ def rgb2bgr_color(rgb_color):
 def draw_points(img_input, points_uv_coords, num_valid_points=None, color_rgb=None, thickness=1):
     '''
     @param img_input: The image on which points will be drawn to (NOTE: it doesn't preserve the image)
-    @param points_uv_coords: FIXME: the uv coordinates list or ndarray must be of shape (n, 2) for n points.
-    Note that the coordinates will be expressed as integers while visualizing
+    @param points_uv_coords: 
+    @note: the uv coordinates list or ndarray must be of shape (n, 2) for n points.
+    @note: the coordinates will be expressed as integers while visualizing
+    
     @param color_rgb: a 3-tuple of the RGB color_rgb for these points
     '''
     if color_rgb == None:
@@ -46,7 +48,7 @@ def draw_points(img_input, points_uv_coords, num_valid_points=None, color_rgb=No
         if np.isnan(pt[0]) or np.isnan(pt[1]):
             print("nan cannot be drawn!")
         else:
-            try:  # TODO: also, out of border points cannot be drawn!
+            try:
                 pt_as_tuple = (int(pt[0]), int(pt[1]))  # Recall: (pt[0],pt[1]) # (x, u or col and y, v or row)
                 cv2.circle(img_input, pt_as_tuple, 2, color_rgb, thickness, 8, 0)
             except:
@@ -293,7 +295,6 @@ def fill_in_bounding_box_selected(x_min, y_min, x_max, y_max):
     '''
     @return a list of the bounding box parameters: [x_min, y_min, width, height]
     '''
-    # TODO: handle inversion drawings of rectangle
     width = abs(x_max - x_min)
     height = abs(y_max - y_min)
     
@@ -301,6 +302,13 @@ def fill_in_bounding_box_selected(x_min, y_min, x_max, y_max):
     
     return bounding_box_entry
 
+
+def get_centroid(x, y, width, height):
+    centroid_x_coord = x + width / 2
+    centroid_y_coord = y + height / 2
+    return (centroid_x_coord, centroid_y_coord)
+
+                        
 def get_bgr_colors_list(num_colors = 10, do_random = False):
     max_num_predifined_colors = 10
     colors_list_bgr = []
@@ -335,8 +343,10 @@ def get_bgr_colors_list(num_colors = 10, do_random = False):
     
     return colors_list_bgr  
 
-
 def draw_instructions_window(win_name):
+    '''
+    Show image with UI instructions (lengend of mouse and keyboard commands)
+    '''
     label_height = 50
     instruction_text_lines = ["MOUSE EVENTS:",
                               "  Right Click inside box to validate bounded target",
@@ -398,7 +408,9 @@ def save_image_sequence_from_video(video_input_fn, images_path):
             
             count += 1
         
-    print("Saved {count:d} images to {output_path:s}".format(count=count, output_path=images_path))      
+    print("Saved {count:d} images to {output_path:s}".format(count=count, output_path=images_path))    
+
+      
 def main():
     global image, clone, current_gt_in_list, box_colors_list, current_validated_bounding_box
 
@@ -472,8 +484,6 @@ def main():
     previous_base_entry_indices = [0]  
     finished_processing = False
     
-    # TODO: Show image with UI instructions (lengend of keyboard commands)
-    
     while not finished_processing and current_frame_number < working_num_of_frames:    
         current_gt_in_list = []
         current_validated_bounding_box = []
@@ -530,9 +540,6 @@ def main():
                     bb_end_point = (int(gt_entry['xmax']), int(gt_entry['ymax']))
                     cv2.rectangle(image, bb_start_point, bb_end_point, box_colors_list[entry_idx], 3)
             
-            # TODO: Add clear box case for removing all when the entire frame is the bounding box
-            # This can happen when the classifier poops (may be)
-        
             # display the image and wait for a keypress
             cv2.imshow("image", image)
             key = cv2.waitKeyEx(1) & 0xFF
@@ -541,16 +548,33 @@ def main():
             # NOTE: we also handle the LEFT arrow or ',' case here
             if key == ord(" ") or key == 83 or key == ord(".") or key == 81 or key == ord(","):         
                 if len(current_validated_bounding_box) == 0:
-                    # TODO: Try to compare to the closest and similar in size from previous frame
-                    for valid_entry in current_gt_in_list:
-                        current_validated_bounding_box = fill_in_bounding_box_selected(x_min=int(valid_entry['xmin']), y_min=int(valid_entry['ymin']), x_max=int(valid_entry['xmax']), y_max=int(valid_entry['ymax']))
-
+                    # Pick the closest and similar in size bounding box stablished in the previous frame
+                    if current_frame_number > 0 and not np.any(np.isnan(output_array_of_bounding_boxes[current_frame_number - 1]), axis=0):
+                        previous_gt_centroid = get_centroid(*output_array_of_bounding_boxes[current_frame_number - 1])
+                        smallest_centroids_distance = np.inf
+                        for valid_entry in current_gt_in_list:
+                            candidate_bounding_box = fill_in_bounding_box_selected(x_min=int(valid_entry['xmin']), y_min=int(valid_entry['ymin']), x_max=int(valid_entry['xmax']), y_max=int(valid_entry['ymax']))
+                            candidate_gt_centroid = get_centroid(*candidate_bounding_box)
+                            # measure distances (L2 norm) between centroids
+                            current_centroids_distance = ((previous_gt_centroid[0] - candidate_gt_centroid[0]) ** 2 + (previous_gt_centroid[1] - candidate_gt_centroid[1]) ** 2) ** 0.5
+                            if current_centroids_distance < smallest_centroids_distance:
+                                smallest_centroids_distance = current_centroids_distance
+                                current_validated_bounding_box = candidate_bounding_box
+                    else:
+                        # Pick box with highest confidence
+                        highest_confidence = 0.
+                        for valid_entry in current_gt_in_list:
+                            current_confidence = float(valid_entry['confidence'][:-1])  # We need to remove the percent sign
+                            if current_confidence >= highest_confidence:
+                                highest_confidence = current_confidence
+                                current_validated_bounding_box = fill_in_bounding_box_selected(x_min=int(valid_entry['xmin']), y_min=int(valid_entry['ymin']), x_max=int(valid_entry['xmax']), y_max=int(valid_entry['ymax']))
+                    
                 # Save current validated bounding box to file
                 if len(current_validated_bounding_box) == 0:
                     output_array_of_bounding_boxes[target_frame_number] = [np.nan, np.nan, np.nan, np.nan]
                 else:
                     output_array_of_bounding_boxes[target_frame_number] = current_validated_bounding_box
-                print("Frame %05d saving BB: %s" % (target_frame_number, output_array_of_bounding_boxes[target_frame_number]))  # TODO: Write nan's to file
+                print("Frame %06d saving BB: %s" % (target_frame_number, output_array_of_bounding_boxes[target_frame_number]))  
                 
                 # press LEFT key or ',' to rewind to the previous frame
                 if key == 81 or key == ord(","): 
