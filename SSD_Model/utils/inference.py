@@ -187,8 +187,8 @@ class TRTInference(object):
             outputs=self.outputs, stream=self.stream)
 
         # Output inference time
-        print("TensorRT inference time: {} ms".format(
-            int(round((time.time() - inference_start_time) * 1000))))
+        #print("TensorRT inference time: {} ms".format(
+        #   int(round((time.time() - inference_start_time) * 1000))))
 
         # And return results
         return detection_out, keepCount_out
