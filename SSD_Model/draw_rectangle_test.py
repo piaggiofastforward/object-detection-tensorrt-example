@@ -410,36 +410,25 @@ def save_image_sequence_from_video(video_input_fn, images_path):
         
     print("Saved {count:d} images to {output_path:s}".format(count=count, output_path=images_path))    
 
-      
-def main():
-    global image, clone, current_gt_in_list, box_colors_list, current_validated_bounding_box
 
+def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_filename):
+    '''
+    The manual annotation main function
+    
+    @param images_path: The complete path to the folder with the sequence of images
+    @param input_bounding_boxes_filename: The complete name of the file containing the automatic bounding boxes information
+    @param output_bounding_boxes_filename: The complete name of the file that will store the validated bounding boxes
+    '''
     import csv
     import sys
     from os import path, stat
-    args = parse_commandline_arguments()
-
-    if not path.isfile(args.auto_annotation):
-        print("Input bounding boxes (labels) file is missing!")
-        sys.exit(1)
-    input_bounding_boxes_file = args.auto_annotation
-        
-    output_folder, output_fn_only = path.split(args.output)
-    output_folder = make_sure_path_exists(output_folder)
-    output_gt_filename = path.join(output_folder, output_fn_only)
-
-    images_path = args.images_input_path
-
-    # Giving precedence to any provided input video file, which will be split into images in the path provided.
-    if not args.video_input is None:  
-        save_image_sequence_from_video(video_input_fn=args.video_input, images_path=images_path)
     
     # Get file names of image sequence
     input_img_folder = verify_path(images_path)  # This must now exist at this point!
     input_imgs_template = path.join(input_img_folder, "*")
     image_names_list = get_images(filename_template=input_imgs_template, indices_list=[], show_images=False, return_names_only=True)
     
-    csvfile_in = open(input_bounding_boxes_file, newline='')
+    csvfile_in = open(input_bounding_boxes_filename, newline='')
     reader = csv.DictReader(csvfile_in)
     rows_in = list(reader)
     last_frame_number = int(rows_in[len(rows_in) - 1]['frame_number'])
@@ -453,11 +442,11 @@ def main():
 
     # Start with an array full of NANs
     output_array_of_bounding_boxes = np.ndarray((0, 4), dtype='int')
-    if path.isfile(output_gt_filename):
+    if path.isfile(output_bounding_boxes_filename):
         # File already exist, so read contents and close 
         # Check if file is empty
-        if not stat(output_gt_filename).st_size == 0:
-            output_array_of_bounding_boxes_temp = np.genfromtxt(output_gt_filename, delimiter=',', dtype='float').reshape(-1, 4)
+        if not stat(output_bounding_boxes_filename).st_size == 0:
+            output_array_of_bounding_boxes_temp = np.genfromtxt(output_bounding_boxes_filename, delimiter=',', dtype='float').reshape(-1, 4)
             # Reduce the array till the last non-NANs in the sequence file
             if len(output_array_of_bounding_boxes_temp):
                 non_nan_indices = np.argwhere(np.logical_not(np.any(np.isnan(output_array_of_bounding_boxes_temp), axis=1)))
@@ -560,6 +549,8 @@ def main():
                             if current_centroids_distance < smallest_centroids_distance:
                                 smallest_centroids_distance = current_centroids_distance
                                 current_validated_bounding_box = candidate_bounding_box
+                                # TODO: it would be helpful to validate also by the size similarity of the bounding boxes
+                                # However, its becoming too heuristic!
                     else:
                         # Pick box with highest confidence
                         highest_confidence = 0.
@@ -612,14 +603,39 @@ def main():
             target_frame_number = 0
         
     # Write results of output_array_of_bounding_boxes to file
-    np.savetxt(output_gt_filename, output_array_of_bounding_boxes, delimiter=',', fmt='%.0f')
+    np.savetxt(output_bounding_boxes_filename, output_array_of_bounding_boxes, delimiter=',', fmt='%.0f')
         
     # close all open windows
     cv2.destroyAllWindows() 
     csvfile_in.close()
     
-    print("Done processing input file %s" % (input_bounding_boxes_file))
+    print("Done processing input file %s" % (input_bounding_boxes_filename))
 
+
+def main():
+    global image, clone, current_gt_in_list, box_colors_list, current_validated_bounding_box
+
+    import sys
+    from os import path
+    args = parse_commandline_arguments()
+
+    if not path.isfile(args.auto_annotation):
+        print("Input bounding boxes (labels) file is missing!")
+        sys.exit(1)
+    input_bounding_boxes_filename = args.auto_annotation
+        
+    output_folder, output_fn_only = path.split(args.output)
+    output_folder = make_sure_path_exists(output_folder)
+    output_bounding_boxes_filename = path.join(output_folder, output_fn_only)
+
+    images_path = args.images_input_path
+
+    # Giving precedence to any provided input video file, which will be split into images in the path provided.
+    if not args.video_input is None:  
+        save_image_sequence_from_video(video_input_fn=args.video_input, images_path=images_path)
+
+    annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_filename)    
+    
 
 if __name__ == '__main__':
     main()
