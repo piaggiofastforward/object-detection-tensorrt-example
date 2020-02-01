@@ -206,7 +206,7 @@ def annotate(images_path, input_bounding_boxes_filename, output_bounding_boxes_f
     input_imgs_template = path.join(input_img_folder, "*")
     image_names_list = get_images(filename_template=input_imgs_template, indices_list=[], show_images=False, return_names_only=True)
     
-    csvfile_in = open(input_bounding_boxes_filename, newline='')
+    csvfile_in = open(input_bounding_boxes_filename)
     reader = csv.DictReader(csvfile_in)
     rows_auto_gt_input = list(reader)
     last_frame_number = int(rows_auto_gt_input[len(rows_auto_gt_input) - 1]['frame_number'])

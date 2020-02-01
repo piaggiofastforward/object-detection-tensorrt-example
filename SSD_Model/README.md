@@ -33,7 +33,7 @@ This tool helps validate existing automatically-annotated (labelled) sequences.
 
 ### Requirements
 
-- Python 3+
+- Python 2.7 or 3+
 
 - OpenCV 3+ with Python3 bindings
 
